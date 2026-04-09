@@ -25,8 +25,27 @@ SCHEMA_COLUMNS = [
     "geo_city",
     "target_folder",
     "sort_status",
+    "error_message",
     "source_path",
 ]
+
+SUPPORTED_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".heic",
+    ".heif",
+    ".dng",
+    ".tif",
+    ".tiff",
+    ".webp",
+    ".mov",
+    ".mp4",
+    ".m4v",
+    ".avi",
+    ".mkv",
+    ".3gp",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -85,7 +104,7 @@ def hash_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
-def build_exiftool_command(exiftool_path: str, scan_folder: Path, recursive: bool) -> List[str]:
+def build_exiftool_command(exiftool_path: str, files: List[Path]) -> List[str]:
     cmd = [
         exiftool_path,
         "-j",
@@ -116,11 +135,40 @@ def build_exiftool_command(exiftool_path: str, scan_folder: Path, recursive: boo
         "-QuickTime:GPSLongitude#",
         "-QuickTime:GPSAltitude#",
         "-Keys:GPSCoordinates",
-        str(scan_folder),
     ]
-    if recursive:
-        cmd.insert(1, "-r")
+    cmd.extend([str(p) for p in files])
     return cmd
+
+
+def list_files(scan_folder: Path, recursive: bool) -> List[Path]:
+    if recursive:
+        return [p for p in scan_folder.rglob("*") if p.is_file()]
+    return [p for p in scan_folder.iterdir() if p.is_file()]
+
+
+def make_error_row(path: Path, message: str) -> Dict[str, str]:
+    print(f"[ERROR] {message}: {path}")
+    return {
+        "file_name": path.name,
+        "file_type": path.suffix.lstrip(".").upper(),
+        "file_size_bytes": str(path.stat().st_size) if path.exists() else "",
+        "file_hash": "",
+        "datetime_original": "",
+        "device_make": "",
+        "device_model": "",
+        "image_width": "",
+        "image_height": "",
+        "duration_sec": "",
+        "gps_lat": "",
+        "gps_lon": "",
+        "gps_alt": "",
+        "geo_country": "",
+        "geo_city": "",
+        "target_folder": "",
+        "sort_status": "Error",
+        "error_message": message,
+        "source_path": str(path),
+    }
 
 
 def run_exiftool(cmd: List[str]) -> List[Dict[str, Any]]:
@@ -140,6 +188,15 @@ def run_exiftool(cmd: List[str]) -> List[Dict[str, Any]]:
     if not isinstance(payload, list):
         raise RuntimeError("Unexpected ExifTool output format.")
     return payload
+
+
+def run_exiftool_in_chunks(exiftool_path: str, files: List[Path], chunk_size: int = 300) -> List[Dict[str, Any]]:
+    all_rows: List[Dict[str, Any]] = []
+    for i in range(0, len(files), chunk_size):
+        chunk = files[i : i + chunk_size]
+        cmd = build_exiftool_command(exiftool_path=exiftool_path, files=chunk)
+        all_rows.extend(run_exiftool(cmd))
+    return all_rows
 
 
 def map_record(record: Dict[str, Any], compute_hash: bool) -> Dict[str, str]:
@@ -185,6 +242,7 @@ def map_record(record: Dict[str, Any], compute_hash: bool) -> Dict[str, str]:
         "geo_city": "",
         "target_folder": "",
         "sort_status": "Pending",
+        "error_message": "",
         "source_path": to_str(source_path),
     }
 
@@ -203,13 +261,31 @@ def main() -> None:
     if not scan_folder.exists() or not scan_folder.is_dir():
         raise FileNotFoundError(f"scan-folder does not exist: {scan_folder}")
 
-    cmd = build_exiftool_command(
-        exiftool_path=args.exiftool_path,
-        scan_folder=scan_folder,
-        recursive=not args.no_recursive,
-    )
-    raw = run_exiftool(cmd)
-    rows = [map_record(record, compute_hash=args.compute_hash) for record in raw]
+    all_files = list_files(scan_folder=scan_folder, recursive=not args.no_recursive)
+    supported_files: List[Path] = []
+    rows: List[Dict[str, str]] = []
+
+    for path in all_files:
+        ext = path.suffix.lower()
+        if ext and ext not in SUPPORTED_EXTENSIONS:
+            rows.append(make_error_row(path, "Unsupported extension"))
+            continue
+        if not ext:
+            rows.append(make_error_row(path, "Missing file extension"))
+            continue
+        supported_files.append(path)
+
+    raw = run_exiftool_in_chunks(args.exiftool_path, supported_files) if supported_files else []
+    mapped = [map_record(record, compute_hash=args.compute_hash) for record in raw]
+
+    mapped_by_source = {str(Path(r.get("source_path", ""))): r for r in mapped}
+    for path in supported_files:
+        key = str(path)
+        if key in mapped_by_source:
+            rows.append(mapped_by_source[key])
+        else:
+            rows.append(make_error_row(path, "ExifTool read failed"))
+
     write_csv(Path(args.output_csv), rows)
     print(f"Done: {len(rows)} files -> {args.output_csv}")
 
