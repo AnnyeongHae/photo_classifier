@@ -1,14 +1,41 @@
+# [시스템 및 캐시]
+__pycache__/
+*/__pycache__/*
+.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# [지리 데이터 - 용량이 크므로 절대 업로드 금지]
+# 폴더 전체를 무시하는 것이 가장 안전합니다.
 Natural Earth_10m_admin_0_countries/
-test_images/
-test_imges/
+cities1000.txt
+
+# [ExifTool - 바이너리 실행 파일 및 라이브러리는 제외]
+exiftool.exe
+exiftool_files/
 exiftool/
 exiftool-*/
-*test*.csv
-*test*.db
-__pycache__/
+
+# [임시 및 로그 파일]
 *.log
 *.tmp
+*.bak
 *.docx
-*.md
-*.txt
-cities_by_countries.py
+# *.md  <- 보통 README.md는 포함하는 것이 관례이므로 제외 여부 확인 필요
+
+# [데이터베이스 및 결과물]
+# 테스트용 DB와 CSV는 제외하되, 양식(Template)은 남기고 싶다면 특정 이름만 지정
+*test*.csv
+*test*.db
+classified_output/    # 결과물 폴더 전체 제외
+
+# [이미지 데이터]
+# 원본 이미지는 보안 및 용량 문제로 Git에 올리지 않습니다.
+test_images/
+*.jpg
+*.jpeg
+*.png
+*.mov
+*.mp4
+*.dng
+*.heic

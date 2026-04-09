@@ -2,12 +2,12 @@ import argparse
 import csv
 import hashlib
 import math
-import os
 import sqlite3
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import shapefile
 
@@ -56,6 +56,32 @@ def normalize_ascii(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
     normalized = normalized.replace("/", "_").replace("\\", "_").strip()
     return "_".join(normalized.split()) if normalized else "Unknown"
+
+
+def parse_date_folder(value: str) -> str:
+    txt = (value or "").strip()
+    if not txt:
+        return "Unknown_Date"
+    patterns = [
+        "%Y:%m:%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y:%m:%d",
+        "%Y-%m-%d",
+    ]
+    for fmt in patterns:
+        try:
+            dt = datetime.strptime(txt, fmt)
+            return dt.strftime("%Y.%m.%d")
+        except ValueError:
+            continue
+    # Fallback: pick leading date-like token when malformed
+    token = txt.split(" ")[0].replace(":", ".").replace("-", ".")
+    parts = token.split(".")
+    if len(parts) >= 3 and all(p.isdigit() for p in parts[:3]):
+        y, m, d = parts[0], parts[1].zfill(2), parts[2].zfill(2)
+        if len(y) == 4:
+            return f"{y}.{m}.{d}"
+    return "Unknown_Date"
 
 
 def hash_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -204,15 +230,23 @@ def classify_country(lat: float, lon: float, polygons: List[CountryPolygon]) -> 
     return None
 
 
-def build_target_folder(base: str, status: str, country_name: str, city_ascii: str = "") -> str:
+def build_target_folder(
+    base: str,
+    status: str,
+    country_name: str,
+    city_ascii: str = "",
+    date_folder: str = "Unknown_Date",
+) -> str:
     if status == "Success":
         if city_ascii:
             return str(Path(base) / "SouthAmerica" / normalize_ascii(country_name) / normalize_ascii(city_ascii))
         return str(Path(base) / "SouthAmerica" / normalize_ascii(country_name))
+    if status == "Success_Country_Others":
+        return str(Path(base) / "SouthAmerica" / normalize_ascii(country_name) / "others" / date_folder)
     if status == "No_GPS":
-        return str(Path(base) / "No_GPS")
+        return str(Path(base) / "No_GPS" / date_folder)
     if status == "Invalid_GPS":
-        return str(Path(base) / "Invalid_GPS")
+        return str(Path(base) / "Invalid_GPS" / date_folder)
     return str(Path(base) / "Other_Regions")
 
 
@@ -291,16 +325,17 @@ def classify_rows(
     for raw in rows:
         row = ensure_schema(raw)
         enrich_file_stats(row, compute_hash=compute_hash)
+        date_folder = parse_date_folder(row.get("datetime_original", "") or raw.get("datetime_original", ""))
 
         lat = parse_float(raw.get(lat_col, row.get("gps_lat", "")))
         lon = parse_float(raw.get(lon_col, row.get("gps_lon", "")))
 
         if lat is None or lon is None:
             row["sort_status"] = "No_GPS"
-            row["target_folder"] = build_target_folder(target_root, "No_GPS", "")
+            row["target_folder"] = build_target_folder(target_root, "No_GPS", "", date_folder=date_folder)
         elif lat < -90 or lat > 90 or lon < -180 or lon > 180:
             row["sort_status"] = "Invalid_GPS"
-            row["target_folder"] = build_target_folder(target_root, "Invalid_GPS", "")
+            row["target_folder"] = build_target_folder(target_root, "Invalid_GPS", "", date_folder=date_folder)
         else:
             row["gps_lat"] = f"{lat:.8f}"
             row["gps_lon"] = f"{lon:.8f}"
@@ -313,16 +348,25 @@ def classify_rows(
                 if city and city_dist_km is not None and city_dist_km <= max_city_distance_km:
                     row["geo_city"] = city.name
                     row["geo_city_ascii"] = city.ascii_name or normalize_ascii(city.name)
+                    row["sort_status"] = "Success"
+                    row["target_folder"] = build_target_folder(
+                        target_root,
+                        "Success",
+                        country.country_name,
+                        row.get("geo_city_ascii", ""),
+                        date_folder=date_folder,
+                    )
                 else:
                     row["geo_city"] = fallback_city
                     row["geo_city_ascii"] = normalize_ascii(fallback_city)
-                row["sort_status"] = "Success"
-                row["target_folder"] = build_target_folder(
-                    target_root,
-                    "Success",
-                    country.country_name,
-                    row.get("geo_city_ascii", ""),
-                )
+                    row["sort_status"] = "Success_Country_Others"
+                    row["target_folder"] = build_target_folder(
+                        target_root,
+                        "Success_Country_Others",
+                        country.country_name,
+                        row.get("geo_city_ascii", ""),
+                        date_folder=date_folder,
+                    )
             else:
                 row["sort_status"] = "Other_Regions"
                 row["target_folder"] = build_target_folder(target_root, "Other_Regions", "")
@@ -345,7 +389,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lat-col", default="gps_lat", help="Input latitude column name")
     parser.add_argument("--lon-col", default="gps_lon", help="Input longitude column name")
     parser.add_argument("--cities-csv", default="my_cities.csv", help="City lookup CSV path")
-    parser.add_argument("--target-root", default="classified_output", help="Target root path stored in target_folder")
+    parser.add_argument("--target-root", default="output", help="Target root path stored in target_folder")
     parser.add_argument(
         "--max-city-distance-km",
         type=float,
@@ -382,6 +426,8 @@ def main() -> None:
         raise RuntimeError("No South America polygons found in shapefile.")
     city_index = load_city_index(cities_csv)
 
+    target_root = str((Path.cwd() / args.target_root).resolve()) if not Path(args.target_root).is_absolute() else args.target_root
+
     rows = read_rows(input_csv)
     enriched = classify_rows(
         rows=rows,
@@ -389,7 +435,7 @@ def main() -> None:
         city_index=city_index,
         lat_col=args.lat_col,
         lon_col=args.lon_col,
-        target_root=args.target_root,
+        target_root=target_root,
         compute_hash=args.compute_hash,
         max_city_distance_km=args.max_city_distance_km,
         fallback_city=args.fallback_city,
