@@ -75,6 +75,18 @@ python move_files_by_classification.py `
   --mode apply
 ```
 
+## One-shot runner (edit only input/output)
+```powershell
+python run_all_pipeline.py `
+  --input-folder "D:\YOUR_INPUT_ROOT" `
+  --output-folder "D:\YOUR_OUTPUT_ROOT"
+```
+
+If you prefer editing values in code, update only:
+- `DEFAULT_INPUT_FOLDER`
+- `DEFAULT_OUTPUT_FOLDER`
+in [run_all_pipeline.py](d:\2026.04.09_photo classification\run_all_pipeline.py).
+
 ## Notes
 - `my_cities.csv`의 `name`은 원본 도시명으로 `geo_city`에 저장됩니다.
 - `target_folder`에는 `geo_city_ascii`를 사용해 경로 안정성을 확보합니다.
