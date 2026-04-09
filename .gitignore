@@ -1,0 +1,14 @@
+Natural Earth_10m_admin_0_countries/
+test_images/
+test_imges/
+exiftool/
+exiftool-*/
+*test*.csv
+*test*.db
+__pycache__/
+*.log
+*.tmp
+*.docx
+*.md
+*.txt
+cities_by_countries.py
