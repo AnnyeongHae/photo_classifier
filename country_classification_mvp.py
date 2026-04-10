@@ -22,6 +22,7 @@ SCHEMA_COLUMNS = [
     "device_model",
     "image_width",
     "image_height",
+    "orientation",
     "duration_sec",
     "gps_lat",
     "gps_lon",
@@ -32,6 +33,9 @@ SCHEMA_COLUMNS = [
     "geo_city_distance_km",
     "target_folder",
     "sort_status",
+    "unique_key",
+    "is_duplicate",
+    "duplicate_reason",
 ]
 
 
@@ -95,9 +99,52 @@ def hash_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def partial_hash_file(path: Path, head_bytes: int = 64 * 1024) -> str:
+    digest = hashlib.sha1()
+    with path.open("rb") as fp:
+        digest.update(fp.read(head_bytes))
+    return digest.hexdigest()
+
+
+def build_unique_key(size_bytes: str, dt: str, partial_hash: str) -> str:
+    raw = f"{size_bytes}|{dt}|{partial_hash}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
 def parse_float(value: str) -> Optional[float]:
     if value is None:
         return None
+    value = str(value).strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def parse_int(value: str) -> Optional[int]:
+    if value is None:
+        return None
+    txt = str(value).strip()
+    if not txt:
+        return None
+    try:
+        return int(float(txt))
+    except ValueError:
+        return None
+
+
+def compute_orientation(width_value: str, height_value: str) -> str:
+    w = parse_int(width_value)
+    h = parse_int(height_value)
+    if w is None or h is None:
+        return "unknown"
+    if w > h:
+        return "landscape"
+    if h > w:
+        return "portrait"
+    return "square"
     value = str(value).strip()
     if not value:
         return None
@@ -279,17 +326,31 @@ def write_csv(output_csv: Path, rows: List[Dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
+def ensure_sqlite_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS media_metadata ("
+        + ", ".join([f'"{c}" TEXT' for c in SCHEMA_COLUMNS])
+        + ")"
+    )
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(media_metadata)")}
+    for col in SCHEMA_COLUMNS:
+        if col not in existing_cols:
+            conn.execute(f'ALTER TABLE media_metadata ADD COLUMN "{col}" TEXT')
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_media_metadata_unique_key ON media_metadata(unique_key)")
+
+
 def write_sqlite(db_path: Path, rows: List[Dict[str, str]]) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
     try:
-        conn.execute("DROP TABLE IF EXISTS media_metadata")
-        cols = ", ".join([f'"{c}" TEXT' for c in SCHEMA_COLUMNS])
-        conn.execute(f"CREATE TABLE media_metadata ({cols})")
+        ensure_sqlite_schema(conn)
         placeholders = ", ".join(["?"] * len(SCHEMA_COLUMNS))
-        insert_sql = f"INSERT INTO media_metadata ({', '.join(SCHEMA_COLUMNS)}) VALUES ({placeholders})"
-        payload = [[str(row.get(col, "")) for col in SCHEMA_COLUMNS] for row in rows]
-        conn.executemany(insert_sql, payload)
+        upsert_sql = (
+            f"INSERT OR IGNORE INTO media_metadata ({', '.join(SCHEMA_COLUMNS)}) "
+            f"VALUES ({placeholders})"
+        )
+        payload = [[str(row.get(col, "")) for col in SCHEMA_COLUMNS] for row in rows if row.get("unique_key")]
+        conn.executemany(upsert_sql, payload)
         conn.commit()
     finally:
         conn.close()
@@ -308,6 +369,53 @@ def enrich_file_stats(row: Dict[str, str], compute_hash: bool) -> None:
         row["file_size_bytes"] = str(file_path.stat().st_size)
     if compute_hash and not row.get("file_hash"):
         row["file_hash"] = hash_file(file_path)
+    if not row.get("orientation"):
+        row["orientation"] = compute_orientation(row.get("image_width", ""), row.get("image_height", ""))
+    if not row.get("unique_key"):
+        dt = row.get("datetime_original", "") or ""
+        size = row.get("file_size_bytes", "") or ""
+        partial_hash = ""
+        try:
+            partial_hash = partial_hash_file(file_path)
+        except OSError:
+            partial_hash = ""
+        if partial_hash:
+            row["unique_key"] = build_unique_key(size, dt, partial_hash)
+
+
+def mark_duplicates(rows: List[Dict[str, str]], db_path: Optional[Path]) -> None:
+    if not db_path:
+        return
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
+    try:
+        ensure_sqlite_schema(conn)
+        existing = {
+            row[0]
+            for row in conn.execute("SELECT unique_key FROM media_metadata WHERE unique_key IS NOT NULL AND unique_key <> ''")
+        }
+    finally:
+        conn.close()
+
+    seen_batch = set()
+    for row in rows:
+        key = (row.get("unique_key") or "").strip()
+        if not key:
+            row["is_duplicate"] = "unknown"
+            row["duplicate_reason"] = "missing_unique_key"
+            continue
+        if key in seen_batch:
+            row["is_duplicate"] = "yes"
+            row["duplicate_reason"] = "duplicate_in_current_batch"
+            continue
+        if key in existing:
+            row["is_duplicate"] = "yes"
+            row["duplicate_reason"] = "already_in_db"
+            seen_batch.add(key)
+            continue
+        row["is_duplicate"] = "no"
+        row["duplicate_reason"] = ""
+        seen_batch.add(key)
 
 
 def classify_rows(
@@ -440,6 +548,7 @@ def main() -> None:
         max_city_distance_km=args.max_city_distance_km,
         fallback_city=args.fallback_city,
     )
+    mark_duplicates(enriched, Path(args.output_db) if args.output_db else None)
 
     write_csv(output_csv, enriched)
     if args.output_db:

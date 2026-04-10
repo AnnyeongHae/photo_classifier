@@ -30,6 +30,7 @@ SCHEMA_COLUMNS = [
 ]
 
 SUPPORTED_EXTENSIONS = {
+    ".arw",
     ".jpg",
     ".jpeg",
     ".png",

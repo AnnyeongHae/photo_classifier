@@ -47,6 +47,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-folder", default=DEFAULT_OUTPUT_FOLDER, help="Final organized output root")
     parser.add_argument("--max-city-distance-km", type=float, default=30.0, help="City cutoff distance")
     parser.add_argument("--fallback-city", default="Unknown_City", help="Fallback city label")
+    parser.add_argument(
+        "--duplicate-policy",
+        choices=["overwrite", "skip", "rename"],
+        default="rename",
+        help="Destination conflict policy during apply",
+    )
     parser.add_argument("--workdir", default=".", help="Project working directory")
     return parser.parse_args()
 
@@ -140,6 +146,8 @@ def main() -> None:
             str(plan_csv),
             "--mode",
             "apply",
+            "--duplicate-policy",
+            args.duplicate_policy,
         ],
         workdir=workdir,
     )

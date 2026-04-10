@@ -1,6 +1,7 @@
 import argparse
 import csv
 import hashlib
+import os
 import shutil
 from pathlib import Path
 from typing import Dict, List
@@ -79,30 +80,47 @@ def run_dry(plan: List[Dict[str, str]]) -> Dict[str, int]:
     return {"planned": len(plan), "exists": exists, "missing": missing}
 
 
-def apply_copy_verify_move(plan: List[Dict[str, str]]) -> Dict[str, int]:
+def apply_copy_verify_move(plan: List[Dict[str, str]], duplicate_policy: str) -> Dict[str, int]:
     copied = 0
     verified = 0
     removed = 0
     skipped_missing = 0
+    skipped_duplicate = 0
+    overwritten = 0
+    renamed = 0
     failed_verify = 0
     for item in plan:
         src = Path(item["source_path"])
         if not src.exists() or not src.is_file():
             skipped_missing += 1
             continue
-        dest = unique_destination(Path(item["destination_path"]))
+        requested_dest = Path(item["destination_path"])
+        dest = requested_dest
+        if requested_dest.exists():
+            if duplicate_policy == "skip":
+                skipped_duplicate += 1
+                continue
+            if duplicate_policy == "rename":
+                dest = unique_destination(requested_dest)
+                renamed += 1
         dest.parent.mkdir(parents=True, exist_ok=True)
 
-        shutil.copy2(src, dest)
+        temp_dest = dest.with_name(f".tmp_{dest.name}_{os.getpid()}")
+        shutil.copy2(src, temp_dest)
         copied += 1
 
         src_hash = sha1_file(src)
-        dst_hash = sha1_file(dest)
+        dst_hash = sha1_file(temp_dest)
         if src_hash != dst_hash:
+            temp_dest.unlink(missing_ok=True)
             failed_verify += 1
             continue
         verified += 1
 
+        if requested_dest.exists() and dest == requested_dest and duplicate_policy == "overwrite":
+            requested_dest.unlink()
+            overwritten += 1
+        temp_dest.replace(dest)
         src.unlink()
         removed += 1
     return {
@@ -111,6 +129,9 @@ def apply_copy_verify_move(plan: List[Dict[str, str]]) -> Dict[str, int]:
         "verified": verified,
         "removed": removed,
         "skipped_missing": skipped_missing,
+        "skipped_duplicate": skipped_duplicate,
+        "overwritten": overwritten,
+        "renamed": renamed,
         "failed_verify": failed_verify,
     }
 
@@ -131,6 +152,12 @@ def parse_args() -> argparse.Namespace:
         "--only-success",
         action="store_true",
         help="Include only Success/Success_Country_Others rows in plan",
+    )
+    parser.add_argument(
+        "--duplicate-policy",
+        choices=["overwrite", "skip", "rename"],
+        default="rename",
+        help="How to handle destination file conflicts during apply",
     )
     return parser.parse_args()
 
@@ -157,12 +184,14 @@ def main() -> None:
         )
         return
 
-    result = apply_copy_verify_move(plan)
+    result = apply_copy_verify_move(plan, duplicate_policy=args.duplicate_policy)
     print(
         "Apply "
         f"planned={result['planned']} copied={result['copied']} verified={result['verified']} "
         f"removed={result['removed']} failed_verify={result['failed_verify']} "
-        f"skipped_missing={result['skipped_missing']} plan_csv={plan_csv}"
+        f"skipped_missing={result['skipped_missing']} skipped_duplicate={result['skipped_duplicate']} "
+        f"overwritten={result['overwritten']} renamed={result['renamed']} "
+        f"duplicate_policy={args.duplicate_policy} plan_csv={plan_csv}"
     )
 
 

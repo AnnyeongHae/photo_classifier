@@ -28,6 +28,8 @@ exiftool-*/
 *test*.csv
 *test*.db
 classified_output/    # 결과물 폴더 전체 제외
+*/other/*
+other/
 
 # [이미지 데이터]
 # 원본 이미지는 보안 및 용량 문제로 Git에 올리지 않습니다.
@@ -39,3 +41,4 @@ test_images/
 *.mp4
 *.dng
 *.heic
+*.arw
