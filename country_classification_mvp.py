@@ -5,7 +5,7 @@ import math
 import sqlite3
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -15,11 +15,21 @@ import shapefile
 SCHEMA_COLUMNS = [
     "file_name",
     "file_type",
+    "mime_type",
     "file_size_bytes",
     "file_hash",
     "datetime_original",
+    "copyright",
+    "color_space",
     "device_make",
     "device_model",
+    "lens",
+    "focal_length_mm",
+    "aperture",
+    "exposure_time",
+    "iso",
+    "flash",
+    "shutter_count",
     "image_width",
     "image_height",
     "orientation",
@@ -36,6 +46,8 @@ SCHEMA_COLUMNS = [
     "unique_key",
     "is_duplicate",
     "duplicate_reason",
+    "db_created_at",
+    "db_updated_at",
 ]
 
 
@@ -345,12 +357,26 @@ def write_sqlite(db_path: Path, rows: List[Dict[str, str]]) -> None:
     try:
         ensure_sqlite_schema(conn)
         placeholders = ", ".join(["?"] * len(SCHEMA_COLUMNS))
-        upsert_sql = (
-            f"INSERT OR IGNORE INTO media_metadata ({', '.join(SCHEMA_COLUMNS)}) "
-            f"VALUES ({placeholders})"
-        )
-        payload = [[str(row.get(col, "")) for col in SCHEMA_COLUMNS] for row in rows if row.get("unique_key")]
-        conn.executemany(upsert_sql, payload)
+        insert_sql = f"INSERT OR IGNORE INTO media_metadata ({', '.join(SCHEMA_COLUMNS)}) VALUES ({placeholders})"
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        for row in rows:
+            key = (row.get("unique_key") or "").strip()
+            if not key:
+                continue
+            if not row.get("db_created_at"):
+                row["db_created_at"] = now
+            row["db_updated_at"] = row.get("db_updated_at") or ""
+            payload = [str(row.get(col, "")) for col in SCHEMA_COLUMNS]
+            before = conn.total_changes
+            conn.execute(insert_sql, payload)
+            inserted = conn.total_changes > before
+            if inserted:
+                continue
+            conn.execute(
+                "UPDATE media_metadata SET db_updated_at = ? WHERE unique_key = ?",
+                (now, key),
+            )
+            row["db_updated_at"] = now
         conn.commit()
     finally:
         conn.close()
