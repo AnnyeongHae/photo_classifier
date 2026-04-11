@@ -1,40 +1,29 @@
 @echo off
-REM ============================================================
-REM  Photo Classifier - Nuitka Standalone Build Script
-REM  Run from the project root directory:
-REM    cd "d:\2026.04.09_photo classification"
-REM    build.cmd
-REM ============================================================
+REM Photo Classifier - Nuitka Standalone Build
+REM Run from the project root: build.cmd
+REM
+REM Required assets before building:
+REM   assets\exiftool.exe
+REM   assets\exiftool_files\
+REM   assets\my_cities.csv
+REM   assets\Natural Earth_10m_admin_0_countries\
+REM
+REM Build logic is in _build_helper.py (avoids cmd.exe space-in-path tokenization).
 
-set PROJECT_DIR=%~dp0
-set DIST_DIR=%PROJECT_DIR%dist
+setlocal
 
-echo [1/3] Installing / checking build dependencies...
-pip install nuitka pyside6 ordered-set zstandard --quiet
+cd /d "%~dp0"
 
-echo [2/3] Running Nuitka standalone build...
-python -m nuitka ^
-  --standalone ^
-  --enable-plugin=pyside6 ^
-  --include-data-dir="%PROJECT_DIR%assets=assets" ^
-  --include-package=shapefile ^
-  --include-package=core ^
-  --include-package=gui ^
-  --include-package=workers ^
-  --windows-console-mode=disable ^
-  --output-dir="%DIST_DIR%" ^
-  --output-filename=PhotoClassifier.exe ^
-  --jobs=4 ^
-  "%PROJECT_DIR%app.py"
-
+pip install -r requirements-build.txt --quiet
 if %ERRORLEVEL% neq 0 (
-    echo [ERROR] Build failed.
-    exit /b %ERRORLEVEL%
+    echo [ERROR] pip install failed. Check requirements-build.txt.
+    endlocal
+    exit /b 1
 )
 
-echo [3/3] Build complete!
-echo Output: %DIST_DIR%\app.dist\PhotoClassifier.exe
-echo.
-echo NOTE: Distribute the entire app.dist\ folder (not just the .exe).
-echo       The assets\ subfolder must remain alongside PhotoClassifier.exe.
+python _build_helper.py
+set BUILD_RC=%ERRORLEVEL%
+
+endlocal
+if %BUILD_RC% neq 0 exit /b %BUILD_RC%
 pause

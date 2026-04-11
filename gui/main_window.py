@@ -3,8 +3,9 @@ Main application window. Uses QStackedWidget to navigate between 3 screens.
 """
 import sys
 from pathlib import Path
+from typing import List
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QStackedWidget
 
 from core.pipeline import PipelineConfig, PipelineResult
@@ -61,6 +62,40 @@ class MainWindow(QMainWindow):
 
         self._setup_screen.run_button.clicked.connect(self._start_pipeline)
         self._stack.setCurrentIndex(_SCREEN_SETUP)
+
+        # Deferred startup self-check (runs after window is shown)
+        QTimer.singleShot(300, self._startup_check)
+
+    def _startup_check(self) -> None:
+        """Warn if critical files are missing before the user clicks Run."""
+        from core.extractor import resolve_exiftool_path
+
+        issues: List[str] = []
+
+        if not resolve_exiftool_path():
+            issues.append(
+                "ExifTool을 찾을 수 없습니다.\n"
+                "  → Setup 화면에서 경로를 직접 입력하거나\n"
+                "     assets/exiftool.exe 에 파일을 배치하세요."
+            )
+
+        assets_dir = _resolve_assets_dir()
+        shapefile = (
+            assets_dir
+            / "Natural Earth_10m_admin_0_countries"
+            / "ne_10m_admin_0_countries.shp"
+        )
+        cities_csv = assets_dir / "my_cities.csv"
+
+        if not shapefile.exists():
+            issues.append(f"쉐이프파일 없음:\n  {shapefile}")
+        if not cities_csv.exists():
+            issues.append(f"도시 CSV 없음:\n  {cities_csv}")
+
+        if issues:
+            body = "아래 파일이 없어 파이프라인이 실행되지 않을 수 있습니다.\n\n"
+            body += "\n\n".join(f"• {i}" for i in issues)
+            QMessageBox.warning(self, "시작 확인 — 파일 누락", body)
 
     def _go_setup(self) -> None:
         self._stack.setCurrentIndex(_SCREEN_SETUP)
