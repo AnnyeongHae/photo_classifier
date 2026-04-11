@@ -5,6 +5,7 @@ Falls back to per-chunk subprocess if stay_open init fails.
 
 All helpers are inlined here — no sys.path manipulation required.
 """
+# -*- coding: utf-8 -*-
 import hashlib
 import json
 import subprocess

@@ -5,6 +5,7 @@ Runs the Nuitka command as a Python list so that cmd.exe path-space tokenization
 is bypassed entirely. Post-build copies the three data assets that Nuitka may
 exclude (.exe/.dll) or mangle (paths with spaces).
 """
+# -*- coding: utf-8 -*-
 import os
 import shutil
 import stat

@@ -2,13 +2,12 @@
 File move/copy with verification.
 Wraps move_files_by_classification.py functions with a progress callback interface.
 """
-import sys
+# -*- coding: utf-8 -*-
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
 from move_files_by_classification import (
     build_plan,
     sha1_file,
@@ -44,11 +43,7 @@ def move_files(
     cancel_flag: Optional[threading.Event] = None,
     progress_cb: Optional[Callable[[int, int, "MoveStats"], None]] = None,
 ) -> MoveStats:
-    """Build move plan and execute copy+verify+remove for each file.
-
-    progress_cb(done, total, stats) called after each file.
-    cancel_flag.is_set() checked before each file; raises RuntimeError if cancelled.
-    """
+    """Build move plan and execute copy+verify+remove for each file."""
     plan = build_plan(rows, only_success=only_success)
     total = len(plan)
     stats = MoveStats(planned=total)
@@ -73,7 +68,7 @@ def move_files(
                     if progress_cb:
                         progress_cb(idx + 1, total, stats)
                     continue
-                elif duplicate_policy == "rename":
+                if duplicate_policy == "rename":
                     dest = unique_destination(requested_dest)
                     stats.renamed += 1
 

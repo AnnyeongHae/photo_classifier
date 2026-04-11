@@ -1,29 +1,12 @@
 """
 Country/city classification.
 Wraps country_classification_mvp.py functions with a progress callback interface.
-
-Import strategy: country_classification_mvp.py lives at the project root (legacy CLI script).
-We add the root to sys.path so it can be imported as a top-level module.
-Nuitka resolves this statically at compile time — the path manipulation is a dev-environment
-convenience only. If you move this package out of the project tree, refactor the functions here.
 """
-import sys
-from importlib.util import find_spec
+# -*- coding: utf-8 -*-
 from pathlib import Path
 from typing import Callable, List, Optional
 
-# Ensure project root is on the path so Nuitka/dev both find country_classification_mvp
-_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
-
-if find_spec("country_classification_mvp") is None:
-    raise ImportError(
-        "country_classification_mvp not found. "
-        f"Expected at: {_PROJECT_ROOT}/country_classification_mvp.py"
-    )
-
-from country_classification_mvp import (  # noqa: E402
+from country_classification_mvp import (
     classify_rows,
     load_city_index,
     load_south_america_polygons,
@@ -43,11 +26,7 @@ def classify_files(
     compute_hash: bool = False,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> List[dict]:
-    """Classify rows by country/city using Natural Earth shapefiles.
-
-    progress_cb(done, total) called once classification is complete (single-pass).
-    Returns enriched rows with geo_country, geo_city, target_folder, sort_status filled in.
-    """
+    """Classify rows by country/city using Natural Earth shapefiles."""
     polygons = load_south_america_polygons(shapefile_path)
     if not polygons:
         raise RuntimeError(f"No South America polygons found in shapefile: {shapefile_path}")

@@ -2,6 +2,7 @@
 QThread worker for running the full pipeline in the background.
 Emits signals so the GUI stays responsive.
 """
+# -*- coding: utf-8 -*-
 import threading
 from pathlib import Path
 

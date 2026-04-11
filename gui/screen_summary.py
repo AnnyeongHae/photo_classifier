@@ -1,6 +1,7 @@
 """
 Screen 3: Summary cards, filterable result table, CSV export.
 """
+# -*- coding: utf-8 -*-
 import csv
 from pathlib import Path
 from typing import List

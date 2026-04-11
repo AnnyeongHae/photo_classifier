@@ -2,6 +2,7 @@
 Full pipeline orchestrator: Extract -> Classify -> Move.
 Used by the QThread worker and can also be called directly.
 """
+# -*- coding: utf-8 -*-
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
