@@ -11,7 +11,6 @@ DEFAULT_INPUT_FOLDER = r"d:\2026.04.09_photo classification\other\test_imges"
 DEFAULT_OUTPUT_FOLDER = r"d:\2026.04.09_photo classification\other\output"
 
 DEFAULT_EXIFTOOL_CANDIDATES = [
-    r"c:\Users\user\Downloads\exiftool-13.55_64\exiftool-13.55_64\exiftool.exe",
     "exiftool",
 ]
 

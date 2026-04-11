@@ -456,7 +456,13 @@ def classify_rows(
     max_city_distance_km: float,
     fallback_city: str,
 ) -> List[Dict[str, str]]:
+    """Classify rows by country/city. Uses geo caching for performance."""
     output: List[Dict[str, str]] = []
+    
+    # Geographic caching: round lat/lon to 0.01 degree (~1km grid)
+    # Most photos cluster near same location, so cache hit rate is high
+    geo_cache: Dict[Tuple[float, float], Tuple[Optional[str], Optional[str]]] = {}
+    
     for raw in rows:
         row = ensure_schema(raw)
         enrich_file_stats(row, compute_hash=compute_hash)
@@ -474,7 +480,15 @@ def classify_rows(
         else:
             row["gps_lat"] = f"{lat:.8f}"
             row["gps_lon"] = f"{lon:.8f}"
-            country = classify_country(lat, lon, polygons)
+            
+            # Geographic cache key (0.01 degree ~= 1km grid)
+            # Photos often cluster in same location, so cache is effective
+            cache_key = (round(lat, 2), round(lon, 2))
+            
+            if cache_key not in geo_cache:
+                geo_cache[cache_key] = classify_country(lat, lon, polygons)
+            
+            country = geo_cache[cache_key]
             if country:
                 row["geo_country"] = country.country_name
                 city, city_dist_km = nearest_city(lat, lon, country.iso_a2, city_index)

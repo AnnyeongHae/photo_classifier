@@ -342,30 +342,32 @@ def extract_metadata(
 
 def resolve_exiftool_path(extra_candidates: Optional[List[str]] = None) -> Optional[str]:
     """Find ExifTool executable. Returns path string or None if not found."""
+    import os
     import shutil
 
     candidates: List[str] = []
 
-    # 1. Next to this executable (Nuitka standalone: assets/ is in exe dir)
+    # 1. Environment variable (highest priority)
+    if os.getenv("EXIFTOOL_PATH"):
+        candidates.append(os.getenv("EXIFTOOL_PATH"))
+
+    # 2. Next to this executable (Nuitka standalone: assets/ is in exe dir)
     exe_dir = Path(sys.executable).parent
     candidates.append(str(exe_dir / "assets" / "exiftool.exe"))
     candidates.append(str(exe_dir / "exiftool.exe"))
 
-    # 2. assets/ relative to project root (dev environment)
+    # 3. assets/ relative to project root (dev environment)
     project_root = Path(__file__).parent.parent
     candidates.append(str(project_root / "assets" / "exiftool.exe"))
 
-    # 3. Extra candidates from caller
+    # 4. Extra candidates from caller
     if extra_candidates:
         candidates.extend(extra_candidates)
 
-    # 4. PATH
+    # 5. PATH environment variable
     candidates.append("exiftool")
 
-    # 5. Known local install location
-    candidates.append(
-        r"c:\Users\user\Downloads\exiftool-13.55_64\exiftool-13.55_64\exiftool.exe"
-    )
+
 
     for candidate in candidates:
         if candidate.lower() in ("exiftool", "exiftool.exe"):
