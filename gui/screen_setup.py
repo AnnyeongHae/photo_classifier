@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QDoubleSpinBox,
     QGroupBox,
@@ -134,8 +135,19 @@ class SetupScreen(QWidget):
         self._city_dist.setSingleStep(5.0)
         self._city_dist.setFixedWidth(80)
 
+        depth_lbl = QLabel("Output Folder Depth:")
+        depth_lbl.setContentsMargins(16, 0, 0, 0)
+        self._depth_cb = QComboBox()
+        self._depth_cb.addItem("국가", "country")
+        self._depth_cb.addItem("국가/도시", "city")
+        self._depth_cb.addItem("국가/도시/날짜", "date")
+        self._depth_cb.setCurrentIndex(1)
+        self._depth_cb.setFixedWidth(140)
+
         adv_layout.addWidget(adv_lbl)
         adv_layout.addWidget(self._city_dist)
+        adv_layout.addWidget(depth_lbl)
+        adv_layout.addWidget(self._depth_cb)
         adv_layout.addStretch()
         root.addWidget(adv_group)
 
@@ -207,6 +219,7 @@ class SetupScreen(QWidget):
             db_path=db_path,
             duplicate_policy=policy,
             max_city_distance_km=self._city_dist.value(),
+            folder_depth=self._depth_cb.currentData(),
         )
 
     @property

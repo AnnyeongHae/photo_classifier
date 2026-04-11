@@ -158,7 +158,7 @@ class SummaryScreen(QWidget):
             self._table.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeToContents)
         self._table.setStyleSheet(
             "QTableView { gridline-color: #e2e8f0; }"
-            "QHeaderView::section { background: #f1f5f9; font-weight: bold; padding: 4px; border: none; border-right: 1px solid #e2e8f0; }"
+            "QHeaderView::section { background: #292929; font-weight: bold; padding: 4px; border: none; border-right: 1px solid #e2e8f0; }"
         )
         root.addWidget(self._table)
 

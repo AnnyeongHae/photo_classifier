@@ -31,6 +31,7 @@ class PipelineConfig:
     duplicate_policy: str = "rename"
     max_city_distance_km: float = 30.0
     fallback_city: str = "Unknown_City"
+    folder_depth: str = "city" # 'country', 'city', 'date'
     only_success_files: bool = False
 
 
@@ -148,6 +149,7 @@ def run_full_pipeline(
             target_root=str(config.output_folder),
             max_city_distance_km=config.max_city_distance_km,
             fallback_city=config.fallback_city,
+            folder_depth=config.folder_depth,
             db_path=config.db_path,
             progress_cb=classify_cb,
         )

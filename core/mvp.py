@@ -310,13 +310,29 @@ def build_target_folder(
     country_name: str,
     city_ascii: str = "",
     date_folder: str = "Unknown_Date",
+    folder_depth: str = "city",
 ) -> str:
     if status == "Success":
-        if city_ascii:
-            return str(Path(base) / "SouthAmerica" / normalize_ascii(country_name) / normalize_ascii(city_ascii))
-        return str(Path(base) / "SouthAmerica" / normalize_ascii(country_name))
+        country_part = normalize_ascii(country_name)
+        if folder_depth == "country":
+            return str(Path(base) / "SouthAmerica" / country_part)
+        city_part = normalize_ascii(city_ascii) if city_ascii else ""
+        if folder_depth == "city" or not date_folder:
+            if city_part:
+                return str(Path(base) / "SouthAmerica" / country_part / city_part)
+            return str(Path(base) / "SouthAmerica" / country_part)
+        # date depth
+        if city_part:
+            return str(Path(base) / "SouthAmerica" / country_part / city_part / date_folder)
+        return str(Path(base) / "SouthAmerica" / country_part / date_folder)
+
     if status == "Success_Country_Others":
-        return str(Path(base) / "SouthAmerica" / normalize_ascii(country_name) / "others" / date_folder)
+        country_part = normalize_ascii(country_name)
+        if folder_depth == "country":
+            return str(Path(base) / "SouthAmerica" / country_part)
+        if folder_depth == "city":
+            return str(Path(base) / "SouthAmerica" / country_part / "others")
+        return str(Path(base) / "SouthAmerica" / country_part / "others" / date_folder)
     if status == "No_GPS":
         return str(Path(base) / "No_GPS" / date_folder)
     if status == "Invalid_GPS":
@@ -466,6 +482,7 @@ def classify_rows(
     target_root: str,
     max_city_distance_km: float,
     fallback_city: str,
+    folder_depth: str = "city",
 ) -> List[Dict[str, str]]:
     """Classify rows by country/city. Uses geo caching for performance."""
     output: List[Dict[str, str]] = []
@@ -515,6 +532,7 @@ def classify_rows(
                         country.country_name,
                         row.get("geo_city_ascii", ""),
                         date_folder=date_folder,
+                        folder_depth=folder_depth,
                     )
                 else:
                     row["geo_city"] = fallback_city
@@ -526,6 +544,7 @@ def classify_rows(
                         country.country_name,
                         row.get("geo_city_ascii", ""),
                         date_folder=date_folder,
+                        folder_depth=folder_depth,
                     )
             else:
                 row["sort_status"] = "Other_Regions"
@@ -561,6 +580,12 @@ def parse_args() -> argparse.Namespace:
         default="Unknown_City",
         help="Fallback city label when nearest city is farther than cutoff",
     )
+    parser.add_argument(
+        "--folder-depth",
+        choices=["country", "city", "date"],
+        default="city",
+        help="Folder categorization depth for classified photos",
+    )
     return parser.parse_args()
 
 
@@ -593,6 +618,7 @@ def main() -> None:
         target_root=target_root,
         max_city_distance_km=args.max_city_distance_km,
         fallback_city=args.fallback_city,
+        folder_depth=args.folder_depth,
     )
     mark_duplicates(enriched, Path(args.output_db) if args.output_db else None)
 
