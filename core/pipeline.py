@@ -11,6 +11,9 @@ from typing import Callable, List, Optional
 from core.extractor import extract_metadata, resolve_exiftool_path
 from core.classifier import classify_files
 from core.mover import move_files, MoveStats
+from core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 STEP_EXTRACT = "extract"
@@ -93,69 +96,88 @@ def run_full_pipeline(
     Raises RuntimeError on cancellation.
     Returns PipelineResult with all rows and move stats.
     """
-    shapefile_path = config.assets_dir / "Natural Earth_10m_admin_0_countries" / "ne_10m_admin_0_countries.shp"
-    cities_csv = config.assets_dir / "my_cities.csv"
+    try:
+        logger.info("Starting pipeline...")
+        logger.info(f"  Input: {config.input_folder}")
+        logger.info(f"  Output: {config.output_folder}")
+        logger.info(f"  Policy: {config.duplicate_policy}")
+        
+        shapefile_path = config.assets_dir / "Natural Earth_10m_admin_0_countries" / "ne_10m_admin_0_countries.shp"
+        cities_csv = config.assets_dir / "my_cities.csv"
 
-    if not config.input_folder.exists():
-        raise FileNotFoundError(f"Input folder not found: {config.input_folder}")
-    if not shapefile_path.exists():
-        raise FileNotFoundError(f"Shapefile not found: {shapefile_path}")
+        if not config.input_folder.exists():
+            raise FileNotFoundError(f"Input folder not found: {config.input_folder}")
+        if not shapefile_path.exists():
+            raise FileNotFoundError(f"Shapefile not found: {shapefile_path}")
 
-    result = PipelineResult()
+        result = PipelineResult()
 
-    # ── Step 1: Extract ──────────────────────────────────────────────────────
-    def extract_cb(done: int, total: int) -> None:
+        # ── Step 1: Extract ──────────────────────────────────────────────────────
+        def extract_cb(done: int, total: int) -> None:
+            if cancel_flag and cancel_flag.is_set():
+                raise RuntimeError("Pipeline cancelled by user")
+            if progress_cb:
+                progress_cb(STEP_EXTRACT, done, total)
+
+        logger.info("Step 1/3: Extracting metadata...")
+        rows = extract_metadata(
+            scan_folder=config.input_folder,
+            exiftool_path=config.exiftool_path,
+            recursive=True,
+            progress_cb=extract_cb,
+        )
+        logger.info(f"Extracted metadata from {len(rows)} files")
+
         if cancel_flag and cancel_flag.is_set():
-            raise RuntimeError("Pipeline cancelled by user")
-        if progress_cb:
-            progress_cb(STEP_EXTRACT, done, total)
+            logger.warning("Pipeline cancelled during extraction")
+            result.cancelled = True
+            return result
 
-    rows = extract_metadata(
-        scan_folder=config.input_folder,
-        exiftool_path=config.exiftool_path,
-        recursive=True,
-        progress_cb=extract_cb,
-    )
+        # ── Step 2: Classify ─────────────────────────────────────────────────────
+        def classify_cb(done: int, total: int) -> None:
+            if cancel_flag and cancel_flag.is_set():
+                raise RuntimeError("Pipeline cancelled by user")
+            if progress_cb:
+                progress_cb(STEP_CLASSIFY, done, total)
 
-    if cancel_flag and cancel_flag.is_set():
-        result.cancelled = True
-        return result
+        logger.info("Step 2/3: Classifying files...")
+        enriched = classify_files(
+            rows=rows,
+            shapefile_path=shapefile_path,
+            cities_csv=cities_csv,
+            target_root=str(config.output_folder),
+            max_city_distance_km=config.max_city_distance_km,
+            fallback_city=config.fallback_city,
+            db_path=config.db_path,
+            progress_cb=classify_cb,
+        )
+        result.rows = enriched
+        logger.info(f"Classified {len(enriched)} files")
 
-    # ── Step 2: Classify ─────────────────────────────────────────────────────
-    def classify_cb(done: int, total: int) -> None:
         if cancel_flag and cancel_flag.is_set():
-            raise RuntimeError("Pipeline cancelled by user")
-        if progress_cb:
-            progress_cb(STEP_CLASSIFY, done, total)
+            logger.warning("Pipeline cancelled during classification")
+            result.cancelled = True
+            return result
 
-    enriched = classify_files(
-        rows=rows,
-        shapefile_path=shapefile_path,
-        cities_csv=cities_csv,
-        target_root=str(config.output_folder),
-        max_city_distance_km=config.max_city_distance_km,
-        fallback_city=config.fallback_city,
-        db_path=config.db_path,
-        progress_cb=classify_cb,
-    )
-    result.rows = enriched
+        # ── Step 3: Move ─────────────────────────────────────────────────────────
+        def move_cb(done: int, total: int, stats: MoveStats) -> None:
+            if progress_cb:
+                progress_cb(STEP_MOVE, done, total)
 
-    if cancel_flag and cancel_flag.is_set():
-        result.cancelled = True
+        logger.info("Step 3/3: Moving files...")
+        move_stats = move_files(
+            rows=enriched,
+            duplicate_policy=config.duplicate_policy,
+            only_success=config.only_success_files,
+            cancel_flag=cancel_flag,
+            progress_cb=move_cb,
+        )
+        result.move_stats = move_stats
+        logger.info(f"Pipeline completed successfully! Moved {move_stats.verified} files")
+
         return result
-
-    # ── Step 3: Move ─────────────────────────────────────────────────────────
-    def move_cb(done: int, total: int, stats: MoveStats) -> None:
-        if progress_cb:
-            progress_cb(STEP_MOVE, done, total)
-
-    move_stats = move_files(
-        rows=enriched,
-        duplicate_policy=config.duplicate_policy,
-        only_success=config.only_success_files,
-        cancel_flag=cancel_flag,
-        progress_cb=move_cb,
-    )
-    result.move_stats = move_stats
-
-    return result
+    
+    except Exception as e:
+        logger.error(f"Pipeline failed: {e}", exc_info=True)
+        result.error = str(e)
+        raise
