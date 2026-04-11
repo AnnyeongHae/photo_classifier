@@ -101,15 +101,7 @@ def parse_date_folder(value: str) -> str:
     return "Unknown_Date"
 
 
-def hash_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    digest = hashlib.sha1()
-    with path.open("rb") as fp:
-        while True:
-            chunk = fp.read(chunk_size)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
+
 
 
 def partial_hash_file(path: Path, head_bytes: int = 64 * 1024) -> str:
@@ -231,8 +223,8 @@ def load_south_america_polygons(shp_path: Path) -> List[CountryPolygon]:
     return polygons
 
 
-def load_city_index(cities_csv: Path) -> Dict[str, List[CityPoint]]:
-    index: Dict[str, List[CityPoint]] = {}
+def load_city_index(cities_csv: Path) -> Dict[str, Dict[Tuple[int, int], List[CityPoint]]]:
+    index: Dict[str, Dict[Tuple[int, int], List[CityPoint]]] = {}
     if not cities_csv.exists():
         return index
     with cities_csv.open("r", encoding="utf-8-sig", newline="") as fp:
@@ -247,7 +239,12 @@ def load_city_index(cities_csv: Path) -> Dict[str, List[CityPoint]]:
             if lat is None or lon is None or not cc:
                 continue
             ascii_name = str(row.get("asciiname", "")).strip() or normalize_ascii(name)
-            index.setdefault(cc, []).append(
+            grid_key = (math.floor(lat), math.floor(lon))
+            if cc not in index:
+                index[cc] = {}
+            if grid_key not in index[cc]:
+                index[cc][grid_key] = []
+            index[cc][grid_key].append(
                 CityPoint(name=name, ascii_name=ascii_name, lat=lat, lon=lon, country_code=cc)
             )
     return index
@@ -268,19 +265,36 @@ def nearest_city(
     lat: float,
     lon: float,
     country_iso_a2: str,
-    city_index: Dict[str, List[CityPoint]],
+    city_index: Dict[str, Dict[Tuple[int, int], List[CityPoint]]],
 ) -> Tuple[Optional[CityPoint], Optional[float]]:
-    cities = city_index.get((country_iso_a2 or "").upper(), [])
-    if not cities:
+    country_data = city_index.get((country_iso_a2 or "").upper())
+    if not country_data:
         return None, None
+        
     best_city: Optional[CityPoint] = None
     best_dist = float("inf")
-    for city in cities:
-        dist = haversine_km(lat, lon, city.lat, city.lon)
-        if dist < best_dist:
-            best_dist = dist
-            best_city = city
-    return best_city, best_dist
+    
+    lat_g, lon_g = math.floor(lat), math.floor(lon)
+    for dl in (-1, 0, 1):
+        for dL in (-1, 0, 1):
+            grid_key = (lat_g + dl, lon_g + dL)
+            for city in country_data.get(grid_key, []):
+                dist = haversine_km(lat, lon, city.lat, city.lon)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_city = city
+
+    if not best_city:
+        for grid_cities in country_data.values():
+            for city in grid_cities:
+                dist = haversine_km(lat, lon, city.lat, city.lon)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_city = city
+
+    if best_city:
+        return best_city, best_dist
+    return None, None
 
 
 def classify_country(lat: float, lon: float, polygons: List[CountryPolygon]) -> Optional[CountryPolygon]:
@@ -383,7 +397,7 @@ def write_sqlite(db_path: Path, rows: List[Dict[str, str]]) -> None:
         conn.close()
 
 
-def enrich_file_stats(row: Dict[str, str], compute_hash: bool) -> None:
+def enrich_file_stats(row: Dict[str, str]) -> None:
     file_path_value = row.get("file_path", "") or row.get("source_path", "")
     if not file_path_value:
         return
@@ -394,8 +408,6 @@ def enrich_file_stats(row: Dict[str, str], compute_hash: bool) -> None:
         row["file_name"] = file_path.name
     if not row.get("file_size_bytes"):
         row["file_size_bytes"] = str(file_path.stat().st_size)
-    if compute_hash and not row.get("file_hash"):
-        row["file_hash"] = hash_file(file_path)
     if not row.get("orientation"):
         row["orientation"] = compute_orientation(row.get("image_width", ""), row.get("image_height", ""))
     if not row.get("unique_key"):
@@ -448,11 +460,10 @@ def mark_duplicates(rows: List[Dict[str, str]], db_path: Optional[Path]) -> None
 def classify_rows(
     rows: List[Dict[str, str]],
     polygons: List[CountryPolygon],
-    city_index: Dict[str, List[CityPoint]],
+    city_index: Dict[str, Dict[Tuple[int, int], List[CityPoint]]],
     lat_col: str,
     lon_col: str,
     target_root: str,
-    compute_hash: bool,
     max_city_distance_km: float,
     fallback_city: str,
 ) -> List[Dict[str, str]]:
@@ -465,7 +476,7 @@ def classify_rows(
     
     for raw in rows:
         row = ensure_schema(raw)
-        enrich_file_stats(row, compute_hash=compute_hash)
+        enrich_file_stats(row)
         date_folder = parse_date_folder(row.get("datetime_original", "") or raw.get("datetime_original", ""))
 
         lat = parse_float(raw.get(lat_col, row.get("gps_lat", "")))
@@ -550,11 +561,6 @@ def parse_args() -> argparse.Namespace:
         default="Unknown_City",
         help="Fallback city label when nearest city is farther than cutoff",
     )
-    parser.add_argument(
-        "--compute-hash",
-        action="store_true",
-        help="Compute SHA1 file hash when file_path/source_path exists (slower)",
-    )
     return parser.parse_args()
 
 
@@ -585,7 +591,6 @@ def main() -> None:
         lat_col=args.lat_col,
         lon_col=args.lon_col,
         target_root=target_root,
-        compute_hash=args.compute_hash,
         max_city_distance_km=args.max_city_distance_km,
         fallback_city=args.fallback_city,
     )

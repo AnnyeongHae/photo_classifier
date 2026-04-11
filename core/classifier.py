@@ -26,7 +26,6 @@ def classify_files(
     max_city_distance_km: float = 30.0,
     fallback_city: str = "Unknown_City",
     db_path: Optional[Path] = None,
-    compute_hash: bool = False,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> List[dict]:
     """Classify rows by country/city using Natural Earth shapefiles."""
@@ -53,7 +52,6 @@ def classify_files(
             lat_col="gps_lat",
             lon_col="gps_lon",
             target_root=target_root,
-            compute_hash=compute_hash,
             max_city_distance_km=max_city_distance_km,
             fallback_city=fallback_city,
         )

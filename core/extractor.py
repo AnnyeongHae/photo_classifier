@@ -71,15 +71,7 @@ def _parse_quicktime_gps(raw: str) -> Tuple[Optional[float], Optional[float], Op
         return None, None, None
 
 
-def _hash_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    digest = hashlib.sha1()
-    with path.open("rb") as fp:
-        while True:
-            chunk = fp.read(chunk_size)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
+
 
 
 def list_files(scan_folder: Path, recursive: bool) -> List[Path]:
@@ -122,7 +114,7 @@ def make_error_row(path: Path, message: str) -> Dict[str, str]:
     }
 
 
-def _map_record(record: Dict[str, Any], compute_hash: bool) -> Dict[str, str]:
+def _map_record(record: Dict[str, Any]) -> Dict[str, str]:
     source_path = Path(str(record.get("SourceFile", "")))
 
     gps_lat = _first_present(record, ["GPSLatitude", "QuickTime:GPSLatitude"])
@@ -143,8 +135,6 @@ def _map_record(record: Dict[str, Any], compute_hash: bool) -> Dict[str, str]:
         size = source_path.stat().st_size
 
     file_hash = ""
-    if compute_hash and source_path.exists() and source_path.is_file():
-        file_hash = _hash_file(source_path)
 
     return {
         "file_name": _to_str(_first_present(record, ["FileName"]) or source_path.name),
@@ -272,7 +262,6 @@ def extract_metadata(
     scan_folder: Path,
     exiftool_path: str,
     recursive: bool = True,
-    compute_hash: bool = False,
     chunk_size: int = 300,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> List[dict]:
@@ -308,7 +297,11 @@ def extract_metadata(
             done = 0
             for i in range(0, total, chunk_size):
                 chunk = supported_files[i : i + chunk_size]
-                raw_records.extend(et.execute(chunk))
+                try:
+                    raw_records.extend(et.execute(chunk))
+                except Exception as e:
+                    # Dead-letter skip if this specific chunk crashes ExifTool
+                    pass
                 done += len(chunk)
                 if progress_cb:
                     progress_cb(done, total)
@@ -322,12 +315,15 @@ def extract_metadata(
         done = 0
         for i in range(0, total, chunk_size):
             chunk = supported_files[i : i + chunk_size]
-            raw_records.extend(_run_chunk_fallback(exiftool_path, chunk))
+            try:
+                raw_records.extend(_run_chunk_fallback(exiftool_path, chunk))
+            except Exception:
+                pass
             done += len(chunk)
             if progress_cb:
                 progress_cb(done, total)
 
-    mapped = [_map_record(r, compute_hash=compute_hash) for r in raw_records]
+    mapped = [_map_record(r) for r in raw_records]
     mapped_by_source = {str(Path(r.get("source_path", ""))): r for r in mapped}
 
     for path in supported_files:
