@@ -60,8 +60,8 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
   <scons_environment />
   <module name="PySide6" kind="CompiledPythonPackage" usage="import path parent" reason="Included to allow post load workaround code." source_path="${sys.prefix}\Lib\site-packages\PySide6\__init__.py" distribution="PySide6,PySide6_Addons,PySide6_Essentials">
     <plugin-influence name="options-nanny" influence="condition-used" condition="use_pyside6" tags_used="use_pyside6" result="true" />
-    <optimization-time pass="1" time="0.03" micro_passes="6" max_branch_merge="40" merged_total="1491" />
-    <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="30" merged_total="228" />
+    <optimization-time pass="1" time="0.08" micro_passes="6" max_branch_merge="40" merged_total="1491" />
+    <optimization-time pass="2" time="0.00" micro_passes="1" max_branch_merge="30" merged_total="228" />
     <distribution-usages>
       <distribution-usage name="shiboken6" />
     </distribution-usages>
@@ -98,7 +98,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="PySide6.QtCore" kind="PythonExtensionModule" usage="import" reason="Extension module needed for standalone mode." source_path="${sys.prefix}\Lib\site-packages\PySide6\QtCore.pyd" distribution="PySide6">
-    <optimization-time pass="1" time="0.05" />
+    <optimization-time pass="1" time="0.07" />
     <optimization-time pass="2" time="0.00" />
     <module_usages />
   </module>
@@ -114,17 +114,17 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="PySide6.QtGui" kind="PythonExtensionModule" usage="import" reason="Extension module needed for standalone mode." source_path="${sys.prefix}\Lib\site-packages\PySide6\QtGui.pyd" distribution="PySide6,PySide6_Addons,PySide6_Essentials">
-    <optimization-time pass="1" time="0.00" />
+    <optimization-time pass="1" time="0.01" />
     <optimization-time pass="2" time="0.00" />
     <module_usages />
   </module>
   <module name="PySide6.QtNetwork" kind="PythonExtensionModule" usage="import fromlist" reason="Extension module needed for standalone mode." source_path="${sys.prefix}\Lib\site-packages\PySide6\QtNetwork.pyd" distribution="PySide6,PySide6_Addons,PySide6_Essentials">
-    <optimization-time pass="1" time="0.00" />
+    <optimization-time pass="1" time="0.01" />
     <optimization-time pass="2" time="0.00" />
     <module_usages />
   </module>
   <module name="PySide6.QtWidgets" kind="PythonExtensionModule" usage="import" reason="Extension module needed for standalone mode." source_path="${sys.prefix}\Lib\site-packages\PySide6\QtWidgets.pyd" distribution="PySide6,PySide6_Addons,PySide6_Essentials">
-    <optimization-time pass="1" time="0.00" />
+    <optimization-time pass="1" time="0.01" />
     <optimization-time pass="2" time="0.00" />
     <module_usages />
   </module>
@@ -141,7 +141,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="PySide6.support.deprecated" kind="CompiledPythonModule" usage="plugin:implicit-imports" reason="Instructed by user to follow to all modules." source_path="${sys.prefix}\Lib\site-packages\PySide6\support\deprecated.py" distribution="PySide6,PySide6_Addons,PySide6_Essentials">
-    <optimization-time pass="1" time="0.00" micro_passes="3" />
+    <optimization-time pass="1" time="0.01" micro_passes="3" />
     <optimization-time pass="2" time="0.00" micro_passes="1" />
     <module_usages>
       <module_usage name="__future__" finding="absolute" line="3" />
@@ -1870,7 +1870,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="core.classifier" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\core\classifier.py">
-    <optimization-time pass="1" time="0.04" micro_passes="4" max_branch_merge="23" merged_total="161" />
+    <optimization-time pass="1" time="0.09" micro_passes="4" max_branch_merge="23" merged_total="161" />
     <optimization-time pass="2" time="0.00" micro_passes="1" max_branch_merge="20" merged_total="39" />
     <module_usages>
       <module_usage name="sys" finding="absolute" line="10" />
@@ -1882,8 +1882,8 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="core.extractor" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\core\extractor.py">
-    <optimization-time pass="1" time="0.09" micro_passes="6" max_branch_merge="129" merged_total="4245" />
-    <optimization-time pass="2" time="0.02" micro_passes="1" max_branch_merge="123" merged_total="658" />
+    <optimization-time pass="1" time="0.19" micro_passes="6" max_branch_merge="129" merged_total="4245" />
+    <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="123" merged_total="658" />
     <module_usages>
       <module_usage name="hashlib" finding="absolute" line="8" />
       <module_usage name="json" finding="absolute" line="9" />
@@ -1896,7 +1896,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="core.mover" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\core\mover.py">
-    <optimization-time pass="1" time="0.04" micro_passes="5" max_branch_merge="103" merged_total="1063" />
+    <optimization-time pass="1" time="0.09" micro_passes="5" max_branch_merge="103" merged_total="1063" />
     <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="92" merged_total="188" />
     <module_usages>
       <module_usage name="sys" finding="absolute" line="5" />
@@ -1911,7 +1911,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="core.pipeline" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\core\pipeline.py">
-    <optimization-time pass="1" time="0.07" micro_passes="5" max_branch_merge="94" merged_total="1389" />
+    <optimization-time pass="1" time="0.13" micro_passes="5" max_branch_merge="94" merged_total="1389" />
     <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="45" merged_total="196" />
     <module_usages>
       <module_usage name="threading" finding="absolute" line="5" />
@@ -1925,8 +1925,8 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="country_classification_mvp" kind="CompiledPythonModule" usage="import" reason="Instructed by user to follow to all modules." source_path="${cwd}\country_classification_mvp.py">
-    <optimization-time pass="1" time="0.19" micro_passes="7" max_branch_merge="94" merged_total="9127" />
-    <optimization-time pass="2" time="0.03" micro_passes="1" max_branch_merge="91" merged_total="1251" />
+    <optimization-time pass="1" time="0.39" micro_passes="7" max_branch_merge="94" merged_total="9127" />
+    <optimization-time pass="2" time="0.02" micro_passes="1" max_branch_merge="91" merged_total="1251" />
     <distribution-usages>
       <distribution-usage name="pyshp" />
     </distribution-usages>
@@ -3457,7 +3457,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="gui.app" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\gui\app.py">
-    <optimization-time pass="1" time="0.00" micro_passes="4" max_branch_merge="19" merged_total="77" />
+    <optimization-time pass="1" time="0.01" micro_passes="4" max_branch_merge="19" merged_total="77" />
     <optimization-time pass="2" time="0.00" micro_passes="1" max_branch_merge="18" merged_total="19" />
     <distribution-usages>
       <distribution-usage name="PySide6" />
@@ -3472,7 +3472,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="gui.main_window" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\gui\main_window.py">
-    <optimization-time pass="1" time="0.03" micro_passes="5" max_branch_merge="54" merged_total="1433" />
+    <optimization-time pass="1" time="0.06" micro_passes="5" max_branch_merge="54" merged_total="1433" />
     <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="44" merged_total="240" />
     <distribution-usages>
       <distribution-usage name="PySide6" />
@@ -3495,7 +3495,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="gui.screen_progress" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\gui\screen_progress.py">
-    <optimization-time pass="1" time="0.04" micro_passes="5" max_branch_merge="159" merged_total="2352" />
+    <optimization-time pass="1" time="0.08" micro_passes="5" max_branch_merge="159" merged_total="2352" />
     <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="159" merged_total="447" />
     <distribution-usages>
       <distribution-usage name="PySide6" />
@@ -3509,7 +3509,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="gui.screen_setup" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\gui\screen_setup.py">
-    <optimization-time pass="1" time="0.03" micro_passes="4" max_branch_merge="160" merged_total="1902" />
+    <optimization-time pass="1" time="0.07" micro_passes="4" max_branch_merge="160" merged_total="1902" />
     <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="160" merged_total="441" />
     <distribution-usages>
       <distribution-usage name="PySide6" />
@@ -3526,7 +3526,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="gui.screen_summary" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\gui\screen_summary.py">
-    <optimization-time pass="1" time="0.11" micro_passes="7" max_branch_merge="244" merged_total="5352" />
+    <optimization-time pass="1" time="0.30" micro_passes="7" max_branch_merge="244" merged_total="5352" />
     <optimization-time pass="2" time="0.02" micro_passes="1" max_branch_merge="241" merged_total="741" />
     <distribution-usages>
       <distribution-usage name="PySide6" />
@@ -4209,7 +4209,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="move_files_by_classification" kind="CompiledPythonModule" usage="import" reason="Instructed by user to follow to all modules." source_path="${cwd}\move_files_by_classification.py">
-    <optimization-time pass="1" time="0.03" micro_passes="5" max_branch_merge="75" merged_total="1857" />
+    <optimization-time pass="1" time="0.07" micro_passes="5" max_branch_merge="75" merged_total="1857" />
     <optimization-time pass="2" time="0.01" micro_passes="1" max_branch_merge="63" merged_total="361" />
     <module_usages>
       <module_usage name="argparse" finding="absolute" line="1" />
@@ -5203,8 +5203,8 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="shapefile" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${sys.prefix}\Lib\site-packages\shapefile.py" distribution="pyshp">
-    <optimization-time pass="1" time="2.48" micro_passes="7" max_branch_merge="171" merged_total="47172" />
-    <optimization-time pass="2" time="0.31" micro_passes="1" max_branch_merge="144" merged_total="6422" />
+    <optimization-time pass="1" time="2.46" micro_passes="7" max_branch_merge="171" merged_total="47172" />
+    <optimization-time pass="2" time="0.28" micro_passes="1" max_branch_merge="144" merged_total="6422" />
     <module_usages>
       <module_usage name="__future__" finding="absolute" line="9" />
       <module_usage name="array" finding="absolute" line="13" />
@@ -5242,7 +5242,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
   </module>
   <module name="shiboken6" kind="CompiledPythonPackage" usage="plugin:implicit-imports" reason="Instructed by user to follow to all modules." source_path="${sys.prefix}\Lib\site-packages\shiboken6\__init__.py" distribution="shiboken6">
     <plugin-influence name="dll-files" influence="condition-used" condition="win32" tags_used="win32" result="true" />
-    <optimization-time pass="1" time="0.00" micro_passes="3" />
+    <optimization-time pass="1" time="0.01" micro_passes="3" />
     <optimization-time pass="2" time="0.00" micro_passes="1" />
     <module_usages>
       <module_usage name="os" finding="absolute" line="1" />
@@ -6193,7 +6193,7 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <module name="workers.pipeline_worker" kind="CompiledPythonModule" usage="root_module" reason="Root module" source_path="${cwd}\workers\pipeline_worker.py">
-    <optimization-time pass="1" time="0.08" micro_passes="5" max_branch_merge="42" merged_total="726" />
+    <optimization-time pass="1" time="0.10" micro_passes="5" max_branch_merge="42" merged_total="726" />
     <optimization-time pass="2" time="0.00" micro_passes="1" max_branch_merge="37" merged_total="121" />
     <distribution-usages>
       <distribution-usage name="PySide6" />
@@ -6329,9 +6329,9 @@ PermissionError: [Errno 13] Permission denied: 'D:\\2026.04.09_photo classificat
     </module_usages>
   </module>
   <performance>
-    <memory_usage name="after_launch" value="44105728" />
-    <memory_usage name="before_c_code_generation" value="87515136" />
-    <memory_usage name="before_running_scons" value="92311552" />
+    <memory_usage name="after_launch" value="44212224" />
+    <memory_usage name="before_c_code_generation" value="86573056" />
+    <memory_usage name="before_running_scons" value="91332608" />
   </performance>
   <data_file name="assets\exiftool.exe" source="${cwd}\assets\exiftool.exe" size="58368" reason="specified data file 'D:\2026.04.09_photo classification\assets\exiftool.exe=assets/exiftool.exe' on command line" tags="user,copy" />
   <data_file name="assets\my_cities.csv" source="${cwd}\assets\my_cities.csv" size="402114" reason="specified data dir 'D:\2026.04.09_photo classification\assets' on command line" tags="user,copy,data-dir-contents" />
