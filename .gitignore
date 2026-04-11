@@ -1,44 +1,83 @@
-# [시스템 및 캐시]
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
-*/__pycache__/*
+**/__pycache__/
+*.pyc
+*.pyo
 .pytest_cache/
+
+# ── OS / 에디터 ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+.claude/
 
-# [지리 데이터 - 용량이 크므로 절대 업로드 금지]
-# 폴더 전체를 무시하는 것이 가장 안전합니다.
+# ── Nuitka 빌드 결과물 ────────────────────────────────────────────────────────
+# dist/ 전체 제외 (DLL, exe 등 수백 MB)
+dist/
+*.dist/
+app.build/
+
+# ── 데이터 / 바이너리 assets (git에 올리지 않음) ─────────────────────────────
+# 로컬 셋업 방법: assets/ 폴더에 아래 항목을 직접 배치
+#   - exiftool.exe  (https://exiftool.org)
+#   - my_cities.csv  (루트의 my_cities.csv 복사)
+#   - Natural Earth_10m_admin_0_countries/  (루트 폴더 복사)
+assets/
+
+# ── 지리 데이터 원본 (루트) ───────────────────────────────────────────────────
 Natural Earth_10m_admin_0_countries/
 cities1000.txt
 
-# [ExifTool - 바이너리 실행 파일 및 라이브러리는 제외]
+# ── ExifTool 바이너리 (루트 또는 하위) ───────────────────────────────────────
 exiftool.exe
 exiftool_files/
-exiftool/
 exiftool-*/
 
-# [임시 및 로그 파일]
+# ── 파이프라인 중간 산출물 CSV ────────────────────────────────────────────────
+pipeline_*.csv
+pipeline_*.db
+*_latest.csv
+*_latest.db
+reclassified_*.csv
+reclassified_*.db
+reindex_*.csv
+root_recursive_*.csv
+move_plan*.csv
+classified_output/
+
+# ── 테스트 / 출력 데이터 ─────────────────────────────────────────────────────
+other/
+test_images/
+*test*.csv
+*test*.db
+
+# ── SQLite DB ────────────────────────────────────────────────────────────────
+*.db
+
+# ── 임시 / 로그 ──────────────────────────────────────────────────────────────
 *.log
 *.tmp
 *.bak
 *.docx
-# *.md  <- 보통 README.md는 포함하는 것이 관례이므로 제외 여부 확인 필요
 
-# [데이터베이스 및 결과물]
-# 테스트용 DB와 CSV는 제외하되, 양식(Template)은 남기고 싶다면 특정 이름만 지정
-*test*.csv
-*test*.db
-classified_output/    # 결과물 폴더 전체 제외
-*/other/*
-other/
-
-# [이미지 데이터]
-# 원본 이미지는 보안 및 용량 문제로 Git에 올리지 않습니다.
-test_images/
+# ── 미디어 원본 파일 ─────────────────────────────────────────────────────────
 *.jpg
 *.jpeg
 *.png
+*.heic
+*.heif
+*.dng
+*.tif
+*.tiff
+*.webp
 *.mov
 *.mp4
-*.dng
-*.heic
+*.m4v
+*.avi
+*.mkv
+*.3gp
 *.arw
+*.raw
+*.cr2
+*.nef
+*.orf
+*.rw2
