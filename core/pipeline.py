@@ -31,7 +31,8 @@ class PipelineConfig:
     duplicate_policy: str = "rename"
     max_city_distance_km: float = 30.0
     fallback_city: str = "Unknown_City"
-    folder_depth: str = "city" # 'country', 'city', 'date'
+    folder_depth: str = "city" # 'country', 'city', 'date', 'country_date'
+    no_gps_depth: str = "date" # 'date', 'date_model'
     only_success_files: bool = False
 
 
@@ -150,6 +151,7 @@ def run_full_pipeline(
             max_city_distance_km=config.max_city_distance_km,
             fallback_city=config.fallback_city,
             folder_depth=config.folder_depth,
+            no_gps_depth=config.no_gps_depth,
             db_path=config.db_path,
             progress_cb=classify_cb,
         )
@@ -175,6 +177,23 @@ def run_full_pipeline(
             progress_cb=move_cb,
         )
         result.move_stats = move_stats
+        
+        # Write error report if there are any failures in extraction or moving
+        failed_rows = [r for r in enriched if r.get("sort_status") == "Error" or "error_message" in r and r.get("error_message")]
+        # Also include move failures if any
+        if failed_rows:
+            import csv
+            error_csv = config.output_folder / "error_report.csv"
+            keys = ["file_name", "sort_status", "error_message", "source_path"]
+            try:
+                with error_csv.open("w", encoding="utf-8-sig", newline="") as fp:
+                    writer = csv.DictWriter(fp, fieldnames=keys, extrasaction='ignore')
+                    writer.writeheader()
+                    writer.writerows(failed_rows)
+                logger.info(f"Wrote {len(failed_rows)} errors to {error_csv}")
+            except Exception as e:
+                logger.error(f"Failed to write error report: {e}")
+
         logger.info(f"Pipeline completed successfully! Moved {move_stats.verified} files")
 
         return result

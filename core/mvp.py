@@ -311,11 +311,15 @@ def build_target_folder(
     city_ascii: str = "",
     date_folder: str = "Unknown_Date",
     folder_depth: str = "city",
+    device_model: str = "",
+    no_gps_depth: str = "date",
 ) -> str:
     if status == "Success":
         country_part = normalize_ascii(country_name)
         if folder_depth == "country":
             return str(Path(base) / "SouthAmerica" / country_part)
+        if folder_depth == "country_date":
+            return str(Path(base) / "SouthAmerica" / country_part / date_folder)
         city_part = normalize_ascii(city_ascii) if city_ascii else ""
         if folder_depth == "city" or not date_folder:
             if city_part:
@@ -330,10 +334,14 @@ def build_target_folder(
         country_part = normalize_ascii(country_name)
         if folder_depth == "country":
             return str(Path(base) / "SouthAmerica" / country_part)
+        if folder_depth == "country_date":
+            return str(Path(base) / "SouthAmerica" / country_part / date_folder)
         if folder_depth == "city":
             return str(Path(base) / "SouthAmerica" / country_part / "others")
         return str(Path(base) / "SouthAmerica" / country_part / "others" / date_folder)
     if status == "No_GPS":
+        if no_gps_depth == "date_model" and device_model:
+            return str(Path(base) / "No_GPS" / date_folder / normalize_ascii(device_model))
         return str(Path(base) / "No_GPS" / date_folder)
     if status == "Invalid_GPS":
         return str(Path(base) / "Invalid_GPS" / date_folder)
@@ -483,6 +491,7 @@ def classify_rows(
     max_city_distance_km: float,
     fallback_city: str,
     folder_depth: str = "city",
+    no_gps_depth: str = "date",
 ) -> List[Dict[str, str]]:
     """Classify rows by country/city. Uses geo caching for performance."""
     output: List[Dict[str, str]] = []
@@ -495,13 +504,29 @@ def classify_rows(
         row = ensure_schema(raw)
         enrich_file_stats(row)
         date_folder = parse_date_folder(row.get("datetime_original", "") or raw.get("datetime_original", ""))
+        
+        make = row.get("device_make", "").strip()
+        model = row.get("device_model", "").strip()
+        camera_info = ""
+        if make and model:
+            if make.lower() in model.lower():
+                camera_info = model
+            else:
+                camera_info = f"{make}_{model}"
+        elif model:
+            camera_info = model
+        elif make:
+            camera_info = make
 
         lat = parse_float(raw.get(lat_col, row.get("gps_lat", "")))
         lon = parse_float(raw.get(lon_col, row.get("gps_lon", "")))
 
         if lat is None or lon is None:
             row["sort_status"] = "No_GPS"
-            row["target_folder"] = build_target_folder(target_root, "No_GPS", "", date_folder=date_folder)
+            row["target_folder"] = build_target_folder(
+                target_root, "No_GPS", "", 
+                date_folder=date_folder, device_model=camera_info, no_gps_depth=no_gps_depth
+            )
         elif lat < -90 or lat > 90 or lon < -180 or lon > 180:
             row["sort_status"] = "Invalid_GPS"
             row["target_folder"] = build_target_folder(target_root, "Invalid_GPS", "", date_folder=date_folder)
@@ -582,9 +607,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--folder-depth",
-        choices=["country", "city", "date"],
+        choices=["country", "city", "date", "country_date"],
         default="city",
         help="Folder categorization depth for classified photos",
+    )
+    parser.add_argument(
+        "--no-gps-depth",
+        choices=["date", "date_model"],
+        default="date",
+        help="Folder categorization depth for photos without GPS",
     )
     return parser.parse_args()
 
@@ -619,6 +650,7 @@ def main() -> None:
         max_city_distance_km=args.max_city_distance_km,
         fallback_city=args.fallback_city,
         folder_depth=args.folder_depth,
+        no_gps_depth=args.no_gps_depth,
     )
     mark_duplicates(enriched, Path(args.output_db) if args.output_db else None)
 

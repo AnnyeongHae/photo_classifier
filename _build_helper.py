@@ -17,6 +17,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 ASSETS_DIR  = PROJECT_DIR / "assets"
 DIST_DIR    = PROJECT_DIR / "dist"
 APP_DIST    = DIST_DIR / "app.dist"
+RELEASE_DIR = PROJECT_DIR / "PhotoClassifier_Release"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -144,6 +145,38 @@ def step_copy_assets() -> int:
     return rc
 
 
+def step_create_release() -> int:
+    """[4/5] Package everything into an intuitive release folder structure."""
+    print("[4/5] Creating release structure...")
+    try:
+        if RELEASE_DIR.exists():
+            _force_remove(RELEASE_DIR)
+        RELEASE_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # 1. Move/Copy app.dist into bin/
+        bin_dir = RELEASE_DIR / "bin"
+        print("      Moving app.dist to bin...")
+        shutil.move(str(APP_DIST), str(bin_dir))
+        
+        # 2. Copy README
+        readme_src = PROJECT_DIR / "README.md"
+        if readme_src.exists():
+            shutil.copy2(readme_src, RELEASE_DIR / "README.md")
+            print("      Copied README.md")
+            
+        # 3. Create Launcher bat
+        bat_path = RELEASE_DIR / "PhotoClassifier_실행하기.bat"
+        with bat_path.open("w", encoding="euc-kr") as fp:
+            fp.write("@echo off\n")
+            fp.write("chcp 65001 > nul\n")
+            fp.write('start "" "%~dp0bin\\PhotoClassifier.exe"\n')
+        print("      Created launcher script")
+        return 0
+    except Exception as exc:
+        print(f"[ERROR] Release packaging failed: {exc}")
+        return 1
+
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -161,14 +194,16 @@ def main() -> int:
     if rc != 0:
         return rc
 
-    exe = APP_DIST / "PhotoClassifier.exe"
+    rc = step_create_release()
+    if rc != 0:
+        return rc
+
     print()
-    print("[4/4] Build complete!")
-    print(f"      Output : {exe}")
+    print("[5/5] Build complete!")
+    print(f"      Output Folder : {RELEASE_DIR}")
     print()
-    print("NOTE: Distribute the entire app.dist\\ folder.")
-    print("      assets\\ contains: exiftool.exe, exiftool_files\\,")
-    print("                        my_cities.csv, Natural Earth_10m_admin_0_countries\\")
+    print("NOTE: Distribute the 'PhotoClassifier_Release' folder as a ZIP.")
+    print("      Users just need to run 'PhotoClassifier_실행하기.bat'")
     return 0
 
 

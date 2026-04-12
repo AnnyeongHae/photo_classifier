@@ -141,13 +141,24 @@ class SetupScreen(QWidget):
         self._depth_cb.addItem("국가", "country")
         self._depth_cb.addItem("국가/도시", "city")
         self._depth_cb.addItem("국가/도시/날짜", "date")
+        self._depth_cb.addItem("국가/날짜", "country_date")
         self._depth_cb.setCurrentIndex(1)
         self._depth_cb.setFixedWidth(140)
+
+        no_gps_lbl = QLabel("No GPS Depth:")
+        no_gps_lbl.setContentsMargins(16, 0, 0, 0)
+        self._no_gps_depth_cb = QComboBox()
+        self._no_gps_depth_cb.addItem("날짜", "date")
+        self._no_gps_depth_cb.addItem("날짜/카메라", "date_model")
+        self._no_gps_depth_cb.setCurrentIndex(0)
+        self._no_gps_depth_cb.setFixedWidth(120)
 
         adv_layout.addWidget(adv_lbl)
         adv_layout.addWidget(self._city_dist)
         adv_layout.addWidget(depth_lbl)
         adv_layout.addWidget(self._depth_cb)
+        adv_layout.addWidget(no_gps_lbl)
+        adv_layout.addWidget(self._no_gps_depth_cb)
         adv_layout.addStretch()
         root.addWidget(adv_group)
 
@@ -220,6 +231,7 @@ class SetupScreen(QWidget):
             duplicate_policy=policy,
             max_city_distance_km=self._city_dist.value(),
             folder_depth=self._depth_cb.currentData(),
+            no_gps_depth=self._no_gps_depth_cb.currentData(),
         )
 
     @property

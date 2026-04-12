@@ -43,6 +43,7 @@ reindex_*.csv
 root_recursive_*.csv
 move_plan*.csv
 classified_output/
+PhotoClassifier_Release/
 
 # ── 테스트 / 출력 데이터 ─────────────────────────────────────────────────────
 other/
@@ -58,6 +59,8 @@ test_images/
 *.tmp
 *.bak
 *.docx
+*.pyd
+*.dll
 
 # ── 미디어 원본 파일 ─────────────────────────────────────────────────────────
 *.jpg

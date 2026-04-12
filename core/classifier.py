@@ -26,6 +26,7 @@ def classify_files(
     max_city_distance_km: float = 30.0,
     fallback_city: str = "Unknown_City",
     folder_depth: str = "city",
+    no_gps_depth: str = "date",
     db_path: Optional[Path] = None,
     progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> List[dict]:
@@ -56,6 +57,7 @@ def classify_files(
             max_city_distance_km=max_city_distance_km,
             fallback_city=fallback_city,
             folder_depth=folder_depth,
+            no_gps_depth=no_gps_depth,
         )
 
         if db_path:
