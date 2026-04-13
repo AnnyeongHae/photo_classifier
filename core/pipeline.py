@@ -115,6 +115,20 @@ def run_full_pipeline(
 
         result = PipelineResult()
 
+        # ── Step 0: Pre-process Archives ─────────────────────────────────────────
+        from core.archive import expand_archives
+        def archive_cb(step_key: str, done: int, total: int, stats: dict = None) -> None:
+            if progress_cb:
+                # Reuse STEP_EXTRACT, GUI bar will start over for actual extraction
+                progress_cb(STEP_EXTRACT, done, total, stats)
+                
+        logger.info("Pre-Step: Expanding archives...")
+        expand_archives(
+            input_folder=config.input_folder,
+            cancel_flag=cancel_flag,
+            progress_cb=archive_cb,
+        )
+
         # ── Step 1: Extract ──────────────────────────────────────────────────────
         def extract_cb(done: int, total: int) -> None:
             if cancel_flag and cancel_flag.is_set():
