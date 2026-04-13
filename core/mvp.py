@@ -298,11 +298,37 @@ def nearest_city(
     return None, None
 
 
+def nearest_country_fallback(lat: float, lon: float, polygons: List[CountryPolygon]) -> Optional[CountryPolygon]:
+    best_country = None
+    best_dist = float('inf')
+    
+    # 1도(약 111km) 범위 내에 겹치는 BBox를 가진 국가만 후보로 선정 (빠른 필터링)
+    buffer = 1.0
+    
+    for country in polygons:
+        min_lon, min_lat, max_lon, max_lat = country.bbox
+        if not (min_lon - buffer <= lon <= max_lon + buffer and min_lat - buffer <= lat <= max_lat + buffer):
+            continue
+            
+        # 외곽선 점유점(Vertex) 중에서 가장 가까운 점을 찾는 유클리디안 근사 방식
+        for ring in country.rings:
+            for v_lon, v_lat in ring:
+                dist_sq = (v_lon - lon)**2 + (v_lat - lat)**2
+                if dist_sq < best_dist:
+                    best_dist = dist_sq
+                    best_country = country
+                    
+    return best_country
+
+
 def classify_country(lat: float, lon: float, polygons: List[CountryPolygon]) -> Optional[CountryPolygon]:
+    # 1. 완벽히 내부(Polygon)에 속하는지 체크
     for country in polygons:
         if point_in_country(lon, lat, country):
             return country
-    return None
+    
+    # 2. 바다/해안가로 밀려난 경우, 가장 가까운 영토(국가 폴리곤)로 편입
+    return nearest_country_fallback(lat, lon, polygons)
 
 
 def build_target_folder(
