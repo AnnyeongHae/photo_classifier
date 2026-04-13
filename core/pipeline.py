@@ -120,7 +120,7 @@ def run_full_pipeline(
             if cancel_flag and cancel_flag.is_set():
                 raise RuntimeError("Pipeline cancelled by user")
             if progress_cb:
-                progress_cb(STEP_EXTRACT, done, total)
+                progress_cb(STEP_EXTRACT, done, total, None)
 
         logger.info("Step 1/3: Extracting metadata...")
         rows = extract_metadata(
@@ -223,7 +223,7 @@ def run_full_pipeline(
         failed_rows = [r for r in enriched if r.get("sort_status") == "Error" or "error_message" in r and r.get("error_message")]
         
         if failed_rows:
-            error_csv = config.db_path.parent / f"{timestamp}_error_report.csv"
+            error_csv = config.db_path.parent / f"{date_str}_error_report.csv"
             keys = ["file_name", "sort_status", "error_message", "source_path"]
             try:
                 with error_csv.open("w", encoding="utf-8-sig", newline="") as fp:
