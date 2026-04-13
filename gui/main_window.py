@@ -31,8 +31,14 @@ def _resolve_assets_dir() -> Path:
 
 
 def _resolve_db_path(output_folder: Path) -> Path:
-    output_folder.mkdir(parents=True, exist_ok=True)
-    return output_folder / "photo_classifier.db"
+    if getattr(sys, 'frozen', False):
+        base_dir = Path(sys.executable).parent.parent
+    else:
+        base_dir = Path(__file__).parent.parent
+    
+    db_dir = base_dir / "DB"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    return db_dir / "photo_classifier.db"
 
 
 class MainWindow(QMainWindow):

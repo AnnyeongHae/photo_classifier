@@ -396,26 +396,25 @@ def write_sqlite(db_path: Path, rows: List[Dict[str, str]]) -> None:
     try:
         ensure_sqlite_schema(conn)
         placeholders = ", ".join(["?"] * len(SCHEMA_COLUMNS))
-        insert_sql = f"INSERT OR IGNORE INTO media_metadata ({', '.join(SCHEMA_COLUMNS)}) VALUES ({placeholders})"
+        insert_sql = f"INSERT INTO media_metadata ({', '.join(SCHEMA_COLUMNS)}) VALUES ({placeholders})"
         now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         for row in rows:
             key = (row.get("unique_key") or "").strip()
             if not key:
                 continue
-            if not row.get("db_created_at"):
+                
+            cursor = conn.execute("SELECT db_created_at FROM media_metadata WHERE unique_key = ?", (key,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                row["db_created_at"] = existing[0] or now
+                row["db_updated_at"] = now
+                conn.execute("UPDATE media_metadata SET db_updated_at = ? WHERE unique_key = ?", (now, key))
+            else:
                 row["db_created_at"] = now
-            row["db_updated_at"] = row.get("db_updated_at") or ""
-            payload = [str(row.get(col, "")) for col in SCHEMA_COLUMNS]
-            before = conn.total_changes
-            conn.execute(insert_sql, payload)
-            inserted = conn.total_changes > before
-            if inserted:
-                continue
-            conn.execute(
-                "UPDATE media_metadata SET db_updated_at = ? WHERE unique_key = ?",
-                (now, key),
-            )
-            row["db_updated_at"] = now
+                row["db_updated_at"] = now
+                payload = [str(row.get(col, "")) for col in SCHEMA_COLUMNS]
+                conn.execute(insert_sql, payload)
         conn.commit()
     finally:
         conn.close()

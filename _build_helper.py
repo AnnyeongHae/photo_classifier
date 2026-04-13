@@ -158,11 +158,11 @@ def step_create_release() -> int:
         print("      Moving app.dist to bin...")
         shutil.move(str(APP_DIST), str(bin_dir))
         
-        # 2. Copy README
-        readme_src = PROJECT_DIR / "README.md"
+        # 2. Copy user manual txt
+        readme_src = PROJECT_DIR / "사용방법.txt"
         if readme_src.exists():
-            shutil.copy2(readme_src, RELEASE_DIR / "README.md")
-            print("      Copied README.md")
+            shutil.copy2(readme_src, RELEASE_DIR / "사용방법.txt")
+            print("      Copied 사용방법.txt")
             
         # 3. Create Launcher bat
         bat_path = RELEASE_DIR / "PhotoClassifier_실행하기.bat"

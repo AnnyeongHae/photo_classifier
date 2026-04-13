@@ -178,12 +178,28 @@ def run_full_pipeline(
         )
         result.move_stats = move_stats
         
+        import csv
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Write unified DB report
+        db_report_csv = config.db_path.parent / f"{timestamp}_db_report.csv"
+        try:
+            from core.mvp import SCHEMA_COLUMNS
+            with db_report_csv.open("w", encoding="utf-8-sig", newline="") as fp:
+                writer = csv.DictWriter(fp, fieldnames=SCHEMA_COLUMNS, extrasaction='ignore')
+                writer.writeheader()
+                writer.writerows(enriched)
+            logger.info(f"Wrote unified DB report to {db_report_csv}")
+        except Exception as e:
+            logger.error(f"Failed to write unified DB report: {e}")
+
         # Write error report if there are any failures in extraction or moving
         failed_rows = [r for r in enriched if r.get("sort_status") == "Error" or "error_message" in r and r.get("error_message")]
-        # Also include move failures if any
+        
         if failed_rows:
-            import csv
-            error_csv = config.output_folder / "error_report.csv"
+            error_csv = config.db_path.parent / f"{timestamp}_error_report.csv"
             keys = ["file_name", "sort_status", "error_message", "source_path"]
             try:
                 with error_csv.open("w", encoding="utf-8-sig", newline="") as fp:
