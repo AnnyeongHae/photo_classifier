@@ -142,22 +142,25 @@ class ProgressScreen(QWidget):
             card.set_value(0)
 
     @Slot(str, int, int)
-    def on_progress(self, step_label: str, done: int, total: int) -> None:
-        label_to_key = {
-            "Extracting metadata...": STEP_EXTRACT,
-            "Classifying country/city...": STEP_CLASSIFY,
-            "Moving files...": STEP_MOVE,
-        }
-        self._current_step = label_to_key.get(step_label, self._current_step)
+    def on_progress(self, step_key: str, done: int, total: int) -> None:
+        if step_key in _STEP_NAMES:
+            self._current_step = step_key
+            step_num = _STEP_ORDER.index(step_key) + 1
+            step_name = _STEP_NAMES[step_key]
+        else:
+            step_num = "?"
+            step_name = step_key
 
-        step_key = self._current_step
-        step_num = _STEP_ORDER.index(step_key) + 1
-        self._step_lbl.setText(f"Step {step_num}/3: {step_label}")
+        self._step_lbl.setText(f"Step {step_num}/3: {step_name}")
         self._step_counter_lbl.setText(f"{done} / {total}")
 
         pct = int((done / total * 100)) if total > 0 else 0
         self._step_bar.setValue(pct)
-        self._overall_bar.setValue(self._step_offsets.get(step_key, 0) + pct)
+        
+        # overall_bar max is 300 (100 per step)
+        offset = self._step_offsets.get(self._current_step, 0)
+        # Scale current step pct to fill exactly 100 points
+        self._overall_bar.setValue(offset + pct)
 
     def update_stats(self, success: int, duplicates: int, skipped: int, failed: int) -> None:
         self._card_success.set_value(success)

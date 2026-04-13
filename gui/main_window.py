@@ -108,6 +108,7 @@ class MainWindow(QMainWindow):
 
         self._worker = PipelineWorker(config=config, parent=self)
         self._worker.progress.connect(self._on_progress)
+        self._worker.stats_updated.connect(self._on_stats_updated)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.start()
@@ -116,9 +117,13 @@ class MainWindow(QMainWindow):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
 
+    @Slot(int, int, int, int)
+    def _on_stats_updated(self, success: int, dup: int, skip: int, fail: int) -> None:
+        self._progress_screen.update_stats(success, dup, skip, fail)
+
     @Slot(str, int, int)
-    def _on_progress(self, step_label: str, done: int, total: int) -> None:
-        self._progress_screen.on_progress(step_label, done, total)
+    def _on_progress(self, step_key: str, done: int, total: int) -> None:
+        self._progress_screen.on_progress(step_key, done, total)
 
     @Slot(object)
     def _on_finished(self, result: PipelineResult) -> None:

@@ -20,18 +20,12 @@ from core.pipeline import (
 
 
 class PipelineWorker(QThread):
-    # (step_label, done, total)
     progress = Signal(str, int, int)
+    stats_updated = Signal(int, int, int, int)
     # Emitted on success
     finished = Signal(object)  # PipelineResult
     # Emitted on unhandled exception
     error = Signal(str)
-
-    STEP_LABELS = {
-        STEP_EXTRACT: "메타데이터 추출 중...",
-        STEP_CLASSIFY: "국가/도시 분류 중...",
-        STEP_MOVE: "파일 이동 중...",
-    }
 
     def __init__(self, config: PipelineConfig, parent=None):
         super().__init__(parent)
@@ -42,9 +36,10 @@ class PipelineWorker(QThread):
         self._cancel_flag.set()
 
     def run(self) -> None:
-        def progress_cb(step: str, done: int, total: int) -> None:
-            label = self.STEP_LABELS.get(step, step)
-            self.progress.emit(label, done, total)
+        def progress_cb(step: str, done: int, total: int, stats: dict = None) -> None:
+            self.progress.emit(step, done, total)
+            if stats:
+                self.stats_updated.emit(stats.get("success", 0), stats.get("duplicates", 0), stats.get("skipped", 0), stats.get("failed", 0))
 
         try:
             result = run_full_pipeline(

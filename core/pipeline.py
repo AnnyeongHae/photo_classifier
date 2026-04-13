@@ -84,8 +84,9 @@ class PipelineResult:
         return self.move_stats.renamed if self.move_stats else 0
 
 
-ProgressCb = Optional[Callable[[str, int, int], None]]
-# (step_name, done, total)
+from typing import Any
+ProgressCb = Optional[Callable[..., None]]
+# (step_name, done, total, stats_dict)
 
 
 def run_full_pipeline(
@@ -140,7 +141,7 @@ def run_full_pipeline(
             if cancel_flag and cancel_flag.is_set():
                 raise RuntimeError("Pipeline cancelled by user")
             if progress_cb:
-                progress_cb(STEP_CLASSIFY, done, total)
+                progress_cb(STEP_CLASSIFY, done, total, None)
 
         logger.info("Step 2/3: Classifying files...")
         enriched = classify_files(
@@ -166,7 +167,13 @@ def run_full_pipeline(
         # ── Step 3: Move ─────────────────────────────────────────────────────────
         def move_cb(done: int, total: int, stats: MoveStats) -> None:
             if progress_cb:
-                progress_cb(STEP_MOVE, done, total)
+                stats_payload = {
+                    "success": stats.success,
+                    "duplicates": stats.skipped_duplicate + stats.renamed + stats.overwritten,
+                    "skipped": stats.skipped_missing,
+                    "failed": stats.failed_verify
+                }
+                progress_cb(STEP_MOVE, done, total, stats_payload)
 
         logger.info("Step 3/3: Moving files...")
         move_stats = move_files(

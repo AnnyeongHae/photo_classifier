@@ -542,7 +542,11 @@ def classify_rows(
             
             country = geo_cache[cache_key]
             if country:
-                row["geo_country"] = country.country_name
+                country_name = country.country_name
+                if lat <= -39.0 and country.iso_a2 in ("AR", "CL"):
+                    country_name = "Patagonia"
+
+                row["geo_country"] = country_name
                 city, city_dist_km = nearest_city(lat, lon, country.iso_a2, city_index)
                 if city_dist_km is not None:
                     row["geo_city_distance_km"] = f"{city_dist_km:.3f}"
@@ -553,7 +557,7 @@ def classify_rows(
                     row["target_folder"] = build_target_folder(
                         target_root,
                         "Success",
-                        country.country_name,
+                        country_name,
                         row.get("geo_city_ascii", ""),
                         date_folder=date_folder,
                         folder_depth=folder_depth,
@@ -565,7 +569,7 @@ def classify_rows(
                     row["target_folder"] = build_target_folder(
                         target_root,
                         "Success_Country_Others",
-                        country.country_name,
+                        country_name,
                         row.get("geo_city_ascii", ""),
                         date_folder=date_folder,
                         folder_depth=folder_depth,
