@@ -186,21 +186,38 @@ def run_full_pipeline(
         result.move_stats = move_stats
         
         import csv
+        from collections import defaultdict
         from datetime import datetime
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Write unified DB report
-        db_report_csv = config.db_path.parent / f"{timestamp}_db_report.csv"
+
+        date_str = datetime.now().strftime("%Y.%m.%d")
+
+        # Split rows by category: date_{no_gps} / date_{country}
+        category_rows: dict = defaultdict(list)
+        for row in enriched:
+            status = row.get("sort_status", "")
+            if status == "No_GPS":
+                category = "No_GPS"
+            elif status == "Invalid_GPS":
+                category = "Invalid_GPS"
+            else:
+                country = (row.get("geo_country") or "").strip()
+                category = country.replace(" ", "_").replace("/", "_") if country else "Unknown"
+            category_rows[category].append(row)
+
         try:
             from core.mvp import SCHEMA_COLUMNS
-            with db_report_csv.open("w", encoding="utf-8-sig", newline="") as fp:
-                writer = csv.DictWriter(fp, fieldnames=SCHEMA_COLUMNS, extrasaction='ignore')
-                writer.writeheader()
-                writer.writerows(enriched)
-            logger.info(f"Wrote unified DB report to {db_report_csv}")
+            for category, cat_rows in category_rows.items():
+                csv_name = f"{date_str}_{category}.csv"
+                cat_csv = config.db_path.parent / csv_name
+                file_exists = cat_csv.exists() and cat_csv.stat().st_size > 0
+                with cat_csv.open("a", encoding="utf-8-sig", newline="") as fp:
+                    writer = csv.DictWriter(fp, fieldnames=SCHEMA_COLUMNS, extrasaction='ignore')
+                    if not file_exists:
+                        writer.writeheader()
+                    writer.writerows(cat_rows)
+                logger.info(f"Wrote {len(cat_rows)} rows to {cat_csv}")
         except Exception as e:
-            logger.error(f"Failed to write unified DB report: {e}")
+            logger.error(f"Failed to write category reports: {e}")
 
         # Write error report if there are any failures in extraction or moving
         failed_rows = [r for r in enriched if r.get("sort_status") == "Error" or "error_message" in r and r.get("error_message")]

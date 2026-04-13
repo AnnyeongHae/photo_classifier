@@ -54,6 +54,7 @@ SCHEMA_COLUMNS = [
 
 @dataclass
 class CountryPolygon:
+    continent: str
     country_name: str
     iso_a2: str
     bbox: Tuple[float, float, float, float]
@@ -202,18 +203,18 @@ def shape_to_rings(shape_obj: shapefile.Shape) -> List[List[Tuple[float, float]]
     return rings
 
 
-def load_south_america_polygons(shp_path: Path) -> List[CountryPolygon]:
+def load_all_polygons(shp_path: Path) -> List[CountryPolygon]:
+    """Load all country polygons from a Natural Earth shapefile (worldwide)."""
     reader = shapefile.Reader(str(shp_path))
     polygons: List[CountryPolygon] = []
     for sr in reader.iterShapeRecords():
         rec = sr.record.as_dict()
-        continent = rec.get("CONTINENT")
-        if continent != "South America":
-            continue
+        continent = rec.get("CONTINENT") or ""
         country_name = rec.get("ADMIN") or rec.get("NAME_EN") or rec.get("NAME") or "Unknown"
         iso_a2 = rec.get("ISO_A2") or ""
         polygons.append(
             CountryPolygon(
+                continent=continent,
                 country_name=country_name,
                 iso_a2=iso_a2,
                 bbox=tuple(sr.shape.bbox),
@@ -345,7 +346,10 @@ def build_target_folder(
         return str(Path(base) / "No_GPS" / date_folder)
     if status == "Invalid_GPS":
         return str(Path(base) / "Invalid_GPS" / date_folder)
-    return str(Path(base) / "Other_Regions")
+    if status == "Other_Regions":
+        country_part = normalize_ascii(country_name) if country_name else "Unknown"
+        return str(Path(base) / "Other_Regions" / country_part)
+    return str(Path(base) / "Other_Regions" / "Unknown")
 
 
 def ensure_schema(row: Dict[str, str]) -> Dict[str, str]:
@@ -497,7 +501,7 @@ def classify_rows(
     
     # Geographic caching: round lat/lon to 0.01 degree (~1km grid)
     # Most photos cluster near same location, so cache hit rate is high
-    geo_cache: Dict[Tuple[float, float], Tuple[Optional[str], Optional[str]]] = {}
+    geo_cache: Dict[Tuple[float, float], Optional[CountryPolygon]] = {}
     
     for raw in rows:
         row = ensure_schema(raw)
@@ -541,7 +545,7 @@ def classify_rows(
                 geo_cache[cache_key] = classify_country(lat, lon, polygons)
             
             country = geo_cache[cache_key]
-            if country:
+            if country and country.continent == "South America":
                 country_name = country.country_name
                 if lat <= -39.0 and country.iso_a2 in ("AR", "CL"):
                     country_name = "Patagonia"
@@ -575,8 +579,13 @@ def classify_rows(
                         folder_depth=folder_depth,
                     )
             else:
+                # Non-SA country detected or no polygon match → Other_Regions/{country}
+                other_country = country.country_name if country else ""
+                row["geo_country"] = other_country
                 row["sort_status"] = "Other_Regions"
-                row["target_folder"] = build_target_folder(target_root, "Other_Regions", "")
+                row["target_folder"] = build_target_folder(
+                    target_root, "Other_Regions", other_country
+                )
         output.append(row)
     return output
 
@@ -635,9 +644,9 @@ def main() -> None:
     if not shp_path.exists():
         raise FileNotFoundError(f"Shapefile not found: {shp_path}")
 
-    polygons = load_south_america_polygons(shp_path)
+    polygons = load_all_polygons(shp_path)
     if not polygons:
-        raise RuntimeError("No South America polygons found in shapefile.")
+        raise RuntimeError("No country polygons found in shapefile.")
     city_index = load_city_index(cities_csv)
 
     target_root = str((Path.cwd() / args.target_root).resolve()) if not Path(args.target_root).is_absolute() else args.target_root

@@ -10,7 +10,7 @@ from core.logging_config import get_logger
 from core.mvp import (
     classify_rows,
     load_city_index,
-    load_south_america_polygons,
+    load_all_polygons,
     mark_duplicates,
     write_sqlite,
 )
@@ -33,9 +33,9 @@ def classify_files(
     """Classify rows by country/city using Natural Earth shapefiles."""
     try:
         logger.debug(f"Loading polygons from {shapefile_path}")
-        polygons = load_south_america_polygons(shapefile_path)
+        polygons = load_all_polygons(shapefile_path)
         if not polygons:
-            raise RuntimeError(f"No South America polygons found in shapefile: {shapefile_path}")
+            raise RuntimeError(f"No country polygons found in shapefile: {shapefile_path}")
         logger.info(f"Loaded {len(polygons)} polygons from shapefile")
 
         logger.debug(f"Loading city index from {cities_csv}")
