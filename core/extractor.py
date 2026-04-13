@@ -20,7 +20,7 @@ _NO_WINDOW: int = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 SUPPORTED_EXTENSIONS = {
     ".arw", ".jpg", ".jpeg", ".png", ".heic", ".heif",
     ".dng", ".tif", ".tiff", ".webp",
-    ".mov", ".mp4", ".m4v", ".avi", ".mkv", ".3gp",
+    ".mov", ".mp4", ".m4v", ".avi", ".mkv", ".3gp", ".osv",
 }
 
 # ── ExifTool tag flags ────────────────────────────────────────────────────────

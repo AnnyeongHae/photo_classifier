@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
-
+venv311/
 # ── OS / 에디터 ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

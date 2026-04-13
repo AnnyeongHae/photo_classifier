@@ -57,6 +57,7 @@ SUPPORTED_EXTENSIONS = {
     ".avi",
     ".mkv",
     ".3gp",
+    ".osv",
 }
 
 
