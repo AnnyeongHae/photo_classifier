@@ -531,6 +531,10 @@ def classify_rows(
     
     for raw in rows:
         row = ensure_schema(raw)
+        if row.get("sort_status") == "Error":
+            output.append(row)
+            continue
+            
         enrich_file_stats(row)
         date_folder = parse_date_folder(row.get("datetime_original", "") or raw.get("datetime_original", ""))
         

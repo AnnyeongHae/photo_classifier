@@ -11,7 +11,8 @@ Thumbs.db
 .claude/
 .cache/
 models/
-
+output/ 
+PhotoTagging_QWEN2.5VL/
 # ── Nuitka 빌드 결과물 ────────────────────────────────────────────────────────
 # dist/ 전체 제외 (DLL, exe 등 수백 MB)
 dist/

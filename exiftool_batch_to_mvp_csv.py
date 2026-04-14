@@ -166,9 +166,16 @@ def build_exiftool_command(exiftool_path: str, files: List[Path]) -> List[str]:
 
 
 def list_files(scan_folder: Path, recursive: bool) -> List[Path]:
+    results = []
     if recursive:
-        return [p for p in scan_folder.rglob("*") if p.is_file()]
-    return [p for p in scan_folder.iterdir() if p.is_file()]
+        for p in scan_folder.rglob("*"):
+            if p.is_file() and "_Processed_ZIPs" not in p.parts:
+                results.append(p)
+    else:
+        for p in scan_folder.iterdir():
+            if p.is_file() and "_Processed_ZIPs" not in p.parts:
+                results.append(p)
+    return results
 
 
 def make_error_row(path: Path, message: str) -> Dict[str, str]:
