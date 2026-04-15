@@ -15,9 +15,15 @@ class VideoWorker(QThread):
         super().__init__(parent)
         self._config = config
         self._cancel_flag = threading.Event()
+        self.active_process = None
 
     def cancel(self) -> None:
         self._cancel_flag.set()
+        if self.active_process:
+            try:
+                self.active_process.terminate()
+            except Exception:
+                pass
 
     def run(self) -> None:
         def progress_cb(step: str, done: int, total: int, stats: dict = None) -> None:
@@ -36,7 +42,8 @@ class VideoWorker(QThread):
             result = run_video_conversion(
                 config=self._config,
                 progress_cb=progress_cb,
-                cancel_flag=self._cancel_flag
+                cancel_flag=self._cancel_flag,
+                worker_context=self
             )
             self.finished.emit(result)
         except Exception as exc:  # noqa: BLE001
