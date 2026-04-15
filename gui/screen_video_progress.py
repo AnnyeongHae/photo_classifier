@@ -38,7 +38,20 @@ class VideoProgressScreen(QWidget):
             "QProgressBar { border-radius: 8px; background: #e2e8f0; }"
             "QProgressBar::chunk { background: #2563eb; border-radius: 8px; }"
         )
-        root.addWidget(self._step_bar)
+        self._file_lbl = QLabel("")
+        self._file_lbl.setStyleSheet("color: #666; font-size: 11px;")
+        root.addWidget(self._file_lbl)
+
+        self._file_bar = QProgressBar()
+        self._file_bar.setRange(0, 100)
+        self._file_bar.setValue(0)
+        self._file_bar.setTextVisible(True)
+        self._file_bar.setFixedHeight(14)
+        self._file_bar.setStyleSheet(
+            "QProgressBar { border-radius: 5px; background: #e2e8f0; text-align: center; color: white; font-size: 10px; font-weight: bold;}"
+            "QProgressBar::chunk { background: #10b981; border-radius: 5px; }"
+        )
+        root.addWidget(self._file_bar)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
@@ -78,6 +91,17 @@ class VideoProgressScreen(QWidget):
         self._step_counter_lbl.setText(f"{done} / {total}")
         pct = int((done / total * 100)) if total > 0 else 0
         self._step_bar.setValue(pct)
+        # Parse step_key to update _file_lbl and reset sub-process bar if finished
+        self._file_lbl.setText(step_key)
+        if "Finished" in step_key or "Skipped" in step_key:
+            self._file_bar.setValue(100)
+            self._file_bar.setFormat("Done")
+
+    def on_file_progress(self, pct: float) -> None:
+        val = int(pct)
+        self._file_bar.setValue(val)
+        time_left = ""
+        self._file_bar.setFormat(f"{pct:.1f}%")
 
     def update_stats(self, success: int, duplicates: int, skipped: int, failed: int) -> None:
         self._card_success.set_value(success)

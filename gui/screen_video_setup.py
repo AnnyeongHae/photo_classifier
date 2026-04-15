@@ -7,8 +7,9 @@ from PySide6.QtWidgets import (
 )
 
 from gui.screen_setup import FolderRow
-from core.video_converter import resolve_ffmpeg_path, resolve_ffprobe_path, VideoConverterConfig
+from core.video_converter import resolve_ffmpeg_path, resolve_ffprobe_path, VideoConverterConfig, detect_hardware_encoder
 from core.extractor import resolve_exiftool_path
+from core.video_converter import logger
 
 class VideoSetupScreen(QWidget):
     def __init__(self, parent=None):
@@ -43,10 +44,10 @@ class VideoSetupScreen(QWidget):
         root.addWidget(folder_group)
 
         # Resolution Setting
-        res_group = QGroupBox("Target Resolution")
+        res_group = QGroupBox("Target Resolution & Acceleration")
         res_layout = QVBoxLayout(res_group)
         
-        res_info = QLabel("Videos larger than this target will be downscaled. Smaller videos will be skipped.")
+        res_info = QLabel("Videos larger than target will be downscaled. Smaller videos skipped.")
         res_info.setStyleSheet("color: #555;")
         res_layout.addWidget(res_info)
 
@@ -57,6 +58,10 @@ class VideoSetupScreen(QWidget):
         self._res_cb.setCurrentIndex(0)
         self._res_cb.setFixedHeight(30)
         res_layout.addWidget(self._res_cb)
+        
+        self._gpu_label = QLabel("GPU Status: Checking...")
+        self._gpu_label.setStyleSheet("color: #666; font-weight: bold; margin-top: 5px;")
+        res_layout.addWidget(self._gpu_label)
         
         root.addWidget(res_group)
         
@@ -84,8 +89,9 @@ class VideoSetupScreen(QWidget):
 
     def _check_dependencies(self):
         missing = []
+        ffmpeg_path = None
         try:
-            resolve_ffmpeg_path()
+            ffmpeg_path = resolve_ffmpeg_path()
         except FileNotFoundError:
             missing.append("FFmpeg")
             
@@ -100,9 +106,26 @@ class VideoSetupScreen(QWidget):
         if missing:
             self._deps_label.setText(f"Missing: {', '.join(missing)} (Place in assets/)")
             self._deps_label.setStyleSheet("color: #dc2626; font-weight: bold;")
+            self._gpu_label.setText("GPU Status: Cannot detect (FFmpeg missing)")
+            self._gpu_label.setStyleSheet("color: #dc2626;")
         else:
             self._deps_label.setText("✔ All required dependencies found (FFmpeg, FFprobe, ExifTool)")
             self._deps_label.setStyleSheet("color: #16a34a; font-weight: bold;")
+            
+            # Detect GPU
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(100, lambda: self._detect_gpu(ffmpeg_path))
+
+    def _detect_gpu(self, ffmpeg_path: str):
+        self._gpu_label.setText("GPU Status: Scanning hardware...")
+        encoder = detect_hardware_encoder(ffmpeg_path, Path.home())
+        if encoder != "libx264":
+            name = "NVIDIA NVENC" if "nvenc" in encoder else "Intel QSV" if "qsv" in encoder else "AMD AMF" if "amf" in encoder else encoder
+            self._gpu_label.setText(f"⚡ GPU Acceleration Active ({name}) - Hyper speed encoding ready!")
+            self._gpu_label.setStyleSheet("color: #059669; font-weight: bold;")
+        else:
+            self._gpu_label.setText("⚠️ No compatible GPU detected. Falling back to CPU encoding (Slower)")
+            self._gpu_label.setStyleSheet("color: #d97706; font-weight: bold;")
 
     def validate(self) -> bool:
         if not self._input_row.path:

@@ -7,6 +7,7 @@ from core.video_converter import VideoConverterConfig, VideoConverterResult, run
 class VideoWorker(QThread):
     progress = Signal(str, int, int)
     stats_updated = Signal(int, int, int, int) # success, dup, skip, fail
+    file_progress = Signal(float) # for the sub-progress bar
     finished = Signal(object) # VideoConverterResult
     error = Signal(str)
 
@@ -28,6 +29,8 @@ class VideoWorker(QThread):
                     stats.get("skipped", 0), 
                     stats.get("failed", 0)
                 )
+                if "_current_pct" in stats:
+                    self.file_progress.emit(stats["_current_pct"])
 
         try:
             result = run_video_conversion(

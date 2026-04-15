@@ -59,6 +59,7 @@ class VideoWindow(QMainWindow):
         self._worker = VideoWorker(config=config, parent=self)
         self._worker.progress.connect(self._on_progress)
         self._worker.stats_updated.connect(self._on_stats_updated)
+        self._worker.file_progress.connect(self._on_file_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.start()
@@ -74,6 +75,10 @@ class VideoWindow(QMainWindow):
     @Slot(str, int, int)
     def _on_progress(self, step_key: str, done: int, total: int) -> None:
         self._progress_screen.on_progress(step_key, done, total)
+        
+    @Slot(float)
+    def _on_file_progress(self, pct: float) -> None:
+        self._progress_screen.on_file_progress(pct)
 
     @Slot(object)
     def _on_finished(self, result: VideoConverterResult) -> None:
