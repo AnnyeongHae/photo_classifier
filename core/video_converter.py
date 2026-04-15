@@ -214,9 +214,7 @@ def run_video_conversion(
                 enc_args = encoder_flags[enc_to_use]
                 # Native FFmpeg EXIF replication without corrupting MP4 (-map_metadata 0 + -movflags use_metadata_tags)
                 cmd_ffmpeg = [
-                    ffmpeg_path, "-y", 
-                    "-hwaccel", "auto", # Attempt hardware decoding to prevent CPU bottleneck
-                    "-i", str(file_path),
+                    ffmpeg_path, "-y", "-i", str(file_path),
                     "-map", "0:v:0", "-map", "0:a?", "-vf", scale_filter
                 ] + enc_args + [
                     "-c:a", "aac", "-b:a", "256k", 
