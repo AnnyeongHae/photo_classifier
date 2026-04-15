@@ -173,6 +173,10 @@ class SetupScreen(QWidget):
             "QPushButton:disabled { background-color: #93c5fd; }"
         )
         root.addWidget(self._run_btn)
+        
+        self._back_btn = QPushButton("← Back to Hub")
+        self._back_btn.setStyleSheet("color: #4b5563; font-weight: bold; border: none; padding: 8px;")
+        root.addWidget(self._back_btn)
 
     def _auto_detect_exiftool(self) -> None:
         path = resolve_exiftool_path()
@@ -241,3 +245,7 @@ class SetupScreen(QWidget):
     @property
     def output_path(self) -> str:
         return self._output_row.path
+
+    @property
+    def back_button(self) -> QPushButton:
+        return self._back_btn

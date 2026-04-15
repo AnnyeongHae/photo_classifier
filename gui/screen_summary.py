@@ -180,10 +180,15 @@ class SummaryScreen(QWidget):
             "QPushButton:hover { background: #1d4ed8; }"
         )
         more_btn.clicked.connect(self._on_process_more)
+        
+        self._back_btn = QPushButton("← Hub로 돌아가기")
+        self._back_btn.setFixedHeight(36)
+        self._back_btn.setStyleSheet("color: #4b5563; font-weight: bold; border: none; padding: 0 16px;")
 
         btn_row.addWidget(self._export_btn)
         btn_row.addStretch()
         btn_row.addWidget(more_btn)
+        btn_row.addWidget(self._back_btn)
         root.addLayout(btn_row)
 
     def load_result(self, result: PipelineResult) -> None:
@@ -289,3 +294,7 @@ class SummaryScreen(QWidget):
             QMessageBox.information(self, "내보내기 완료", f"{visible_count}개 행을 저장했습니다:\n{path}")
         except OSError as exc:
             QMessageBox.critical(self, "내보내기 실패", str(exc))
+
+    @property
+    def back_button(self) -> QPushButton:
+        return self._back_btn

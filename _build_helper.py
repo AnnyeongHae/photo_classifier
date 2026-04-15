@@ -77,13 +77,13 @@ def step_check_assets() -> bool:
     ok = True
     checks = [
         (ASSETS_DIR / "exiftool.exe",
-         "assets\\exiftool.exe"),
+         "assets\\exiftool.exe (Required)"),
         (ASSETS_DIR / "exiftool_files",
-         "assets\\exiftool_files\\"),
+         "assets\\exiftool_files\\ (Required)"),
         (ASSETS_DIR / "my_cities.csv",
-         "assets\\my_cities.csv"),
+         "assets\\my_cities.csv (Required)"),
         (ASSETS_DIR / "Natural Earth_10m_admin_0_countries" / "ne_10m_admin_0_countries.shp",
-         "assets\\Natural Earth_10m_admin_0_countries\\ne_10m_admin_0_countries.shp"),
+         "assets\\Natural Earth_10m_admin_0_countries\\ne_10m_admin_0_countries.shp (Required)"),
     ]
     for path, label in checks:
         if path.exists():
@@ -91,6 +91,18 @@ def step_check_assets() -> bool:
         else:
             print(f"[ERROR] Required asset not found: {label}")
             ok = False
+            
+    # Optional assets for Video Converter
+    opt_checks = [
+        ("ffmpeg.exe", "assets\\ffmpeg.exe (Optional)"),
+        ("ffprobe.exe", "assets\\ffprobe.exe (Optional)")
+    ]
+    for exe_name, label in opt_checks:
+        if (ASSETS_DIR / exe_name).exists() or list(ASSETS_DIR.rglob(exe_name)):
+            print(f"      OK: {label}")
+        else:
+            print(f"[WARN] Optional asset not found: {label} - Video converter may not work.")
+            
     return ok
 
 
@@ -138,6 +150,15 @@ def step_copy_assets() -> int:
          ASSETS_DIR / "exiftool_files",
          assets_dst / "exiftool_files"),
     ]
+    
+    # Find ffmpeg and ffprobe anywhere in ASSETS_DIR and copy to assets_dst directly
+    for exe in ["ffmpeg.exe", "ffprobe.exe"]:
+        if (ASSETS_DIR / exe).exists():
+            items.append((exe, ASSETS_DIR / exe, assets_dst / exe))
+        else:
+            found = list(ASSETS_DIR.rglob(exe))
+            if found:
+                items.append((exe, found[0], assets_dst / exe))
 
     rc = 0
     for label, src, dst in items:
