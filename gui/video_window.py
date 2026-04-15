@@ -57,9 +57,11 @@ class VideoWindow(QMainWindow):
         self._stack.setCurrentIndex(_SCREEN_PROGRESS)
 
         self._worker = VideoWorker(config=config, parent=self)
+        self._worker.max_concurrent_updated.connect(self._on_max_concurrent_updated)
         self._worker.progress.connect(self._on_progress)
+        self._worker.task_progress.connect(self._on_task_progress)
+        self._worker.task_finished.connect(self._on_task_finished)
         self._worker.stats_updated.connect(self._on_stats_updated)
-        self._worker.file_progress.connect(self._on_file_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.start()
@@ -68,7 +70,12 @@ class VideoWindow(QMainWindow):
         if self._worker and self._worker.isRunning():
             self._worker.cancel()
 
-    @Slot(int, int, int, int)
+    @Slot(int)
+    def _on_max_concurrent_updated(self, max_concurrent: int) -> None:
+        """Update GUI when max concurrent encodes is determined."""
+        self._progress_screen.set_max_concurrent(max_concurrent)
+
+    @Slot(str, int, int, int, int)
     def _on_stats_updated(self, success: int, dup: int, skip: int, fail: int) -> None:
         self._progress_screen.update_stats(success, dup, skip, fail)
 
@@ -76,9 +83,15 @@ class VideoWindow(QMainWindow):
     def _on_progress(self, step_key: str, done: int, total: int) -> None:
         self._progress_screen.on_progress(step_key, done, total)
         
-    @Slot(float)
-    def _on_file_progress(self, pct: float) -> None:
-        self._progress_screen.on_file_progress(pct)
+    @Slot(int, str, float)
+    def _on_task_progress(self, task_num: int, file_name: str, pct: float) -> None:
+        self._progress_screen.on_task_progress(task_num, file_name, pct)
+
+    @Slot(int, str)
+    def _on_task_finished(self, task_num: int, file_name: str) -> None:
+        self._progress_screen.on_task_finished(task_num, file_name)
+        # Schedule reset for next video (after a short delay for visual feedback)
+        QTimer.singleShot(500, lambda: self._progress_screen.reset_task(task_num))
 
     @Slot(object)
     def _on_finished(self, result: VideoConverterResult) -> None:

@@ -64,6 +64,7 @@ class VideoSetupScreen(QWidget):
         self._codec_cb.addItem("H.265 / HEVC (Preserve 10-bit HDR Colors, High Quality)", "hevc")
         self._codec_cb.setCurrentIndex(0)
         self._codec_cb.setFixedHeight(30)
+        self._codec_cb.currentIndexChanged.connect(self._on_codec_changed)
         res_layout.addWidget(self._codec_cb)
 
         self._gpu_label = QLabel("GPU Status: Checking...")
@@ -94,6 +95,13 @@ class VideoSetupScreen(QWidget):
         self._back_btn.setStyleSheet("color: #4b5563; font-weight: bold; border: none; padding: 8px;")
         root.addWidget(self._back_btn)
 
+    def _on_codec_changed(self):
+        try:
+            ffmpeg_path = resolve_ffmpeg_path()
+            self._detect_gpu(ffmpeg_path)
+        except Exception:
+            pass
+
     def _check_dependencies(self):
         missing = []
         ffmpeg_path = None
@@ -107,31 +115,28 @@ class VideoSetupScreen(QWidget):
         except FileNotFoundError:
             missing.append("FFprobe")
             
-        if not resolve_exiftool_path():
-            missing.append("ExifTool")
-            
         if missing:
             self._deps_label.setText(f"Missing: {', '.join(missing)} (Place in assets/)")
             self._deps_label.setStyleSheet("color: #dc2626; font-weight: bold;")
             self._gpu_label.setText("GPU Status: Cannot detect (FFmpeg missing)")
             self._gpu_label.setStyleSheet("color: #dc2626;")
         else:
-            self._deps_label.setText("✔ All required dependencies found (FFmpeg, FFprobe, ExifTool)")
+            self._deps_label.setText("✔ All required dependencies found (FFmpeg, FFprobe)")
             self._deps_label.setStyleSheet("color: #16a34a; font-weight: bold;")
             
-            # Detect GPU
             from PySide6.QtCore import QTimer
             QTimer.singleShot(100, lambda: self._detect_gpu(ffmpeg_path))
 
     def _detect_gpu(self, ffmpeg_path: str):
-        self._gpu_label.setText("GPU Status: Scanning hardware...")
-        encoder = detect_hardware_encoder(ffmpeg_path, Path.home())
-        if encoder != "libx264":
+        self._gpu_label.setText(f"GPU Status: Scanning hardware for {self.codec_choice.upper()}...")
+        self._gpu_label.repaint()
+        encoder = detect_hardware_encoder(ffmpeg_path, Path.home(), self.codec_choice)
+        if encoder not in ["libx264", "libx265"]:
             name = "NVIDIA NVENC" if "nvenc" in encoder else "Intel QSV" if "qsv" in encoder else "AMD AMF" if "amf" in encoder else encoder
-            self._gpu_label.setText(f"⚡ GPU Acceleration Active ({name}) - Hyper speed encoding ready!")
+            self._gpu_label.setText(f"⚡ GPU Acceleration Active ({name} for {self.codec_choice.upper()}) - Hyper speed encoding ready!")
             self._gpu_label.setStyleSheet("color: #059669; font-weight: bold;")
         else:
-            self._gpu_label.setText("⚠️ No compatible GPU detected. Falling back to CPU encoding (Slower)")
+            self._gpu_label.setText(f"⚠️ No compatible GPU detected for {self.codec_choice.upper()}. Falling back to CPU encoding (Slower)")
             self._gpu_label.setStyleSheet("color: #d97706; font-weight: bold;")
 
     def validate(self) -> bool:
@@ -148,10 +153,8 @@ class VideoSetupScreen(QWidget):
         try:
             resolve_ffmpeg_path()
             resolve_ffprobe_path()
-            if not resolve_exiftool_path():
-                raise FileNotFoundError()
         except FileNotFoundError:
-            QMessageBox.critical(self, "Missing Dependencies", "FFmpeg, FFprobe, or ExifTool missing.")
+            QMessageBox.critical(self, "Missing Dependencies", "FFmpeg or FFprobe missing.")
             return False
             
         return True

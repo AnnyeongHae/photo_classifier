@@ -2,6 +2,7 @@
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout, QWidget,
+    QScrollArea
 )
 
 from gui.screen_progress import StatCard
@@ -10,6 +11,8 @@ class VideoProgressScreen(QWidget):
     def __init__(self, on_cancel, parent=None):
         super().__init__(parent)
         self._on_cancel = on_cancel
+        self._task_bars = {}  # {task_num: (progress_bar, label)}
+        self._max_concurrent = 1
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -38,20 +41,19 @@ class VideoProgressScreen(QWidget):
             "QProgressBar { border-radius: 8px; background: #e2e8f0; }"
             "QProgressBar::chunk { background: #2563eb; border-radius: 8px; }"
         )
-        self._file_lbl = QLabel("")
-        self._file_lbl.setStyleSheet("color: #666; font-size: 11px;")
-        root.addWidget(self._file_lbl)
+        root.addWidget(self._step_bar)
 
-        self._file_bar = QProgressBar()
-        self._file_bar.setRange(0, 100)
-        self._file_bar.setValue(0)
-        self._file_bar.setTextVisible(True)
-        self._file_bar.setFixedHeight(14)
-        self._file_bar.setStyleSheet(
-            "QProgressBar { border-radius: 5px; background: #e2e8f0; text-align: center; color: white; font-size: 10px; font-weight: bold;}"
-            "QProgressBar::chunk { background: #10b981; border-radius: 5px; }"
-        )
-        root.addWidget(self._file_bar)
+        # Task progress bars container (scrollable)
+        self._tasks_container = QWidget()
+        self._tasks_layout = QVBoxLayout(self._tasks_container)
+        self._tasks_layout.setSpacing(10)
+        self._tasks_layout.setContentsMargins(0, 0, 0, 0)
+        
+        scroll = QScrollArea()
+        scroll.setWidget(self._tasks_container)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+        root.addWidget(scroll, 1)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
@@ -66,8 +68,6 @@ class VideoProgressScreen(QWidget):
             cards_layout.addWidget(card)
         root.addLayout(cards_layout)
 
-        root.addStretch()
-
         self._cancel_btn = QPushButton("Cancel")
         self._cancel_btn.setFixedHeight(38)
         self._cancel_btn.setStyleSheet(
@@ -77,10 +77,46 @@ class VideoProgressScreen(QWidget):
         self._cancel_btn.clicked.connect(self._confirm_cancel)
         root.addWidget(self._cancel_btn)
 
+    def set_max_concurrent(self, max_concurrent: int) -> None:
+        """Set the number of concurrent tasks and create corresponding progress bars."""
+        self._max_concurrent = max_concurrent
+        # Clear existing task bars
+        for bar, lbl in self._task_bars.values():
+            bar.deleteLater()
+            lbl.deleteLater()
+        self._task_bars.clear()
+        
+        # Create new task bars
+        for task_num in range(1, max_concurrent + 1):
+            # Task label
+            task_lbl = QLabel(f"Task {task_num}: Ready")
+            task_lbl.setStyleSheet("color: #333; font-size: 11px; font-weight: bold;")
+            self._tasks_layout.addWidget(task_lbl)
+            
+            # Progress bar
+            progress_bar = QProgressBar()
+            progress_bar.setRange(0, 100)
+            progress_bar.setValue(0)
+            progress_bar.setTextVisible(True)
+            progress_bar.setFixedHeight(18)
+            progress_bar.setStyleSheet(
+                "QProgressBar { border-radius: 5px; background: #e2e8f0; text-align: center; color: white; font-size: 10px; font-weight: bold;}"
+                "QProgressBar::chunk { background: #10b981; border-radius: 5px; }"
+            )
+            self._tasks_layout.addWidget(progress_bar)
+            
+            self._task_bars[task_num] = (progress_bar, task_lbl)
+        
+        self._tasks_layout.addStretch()
+
     def reset(self) -> None:
         self._step_lbl.setText("Scanning...")
         self._step_counter_lbl.setText("0 / 0")
         self._step_bar.setValue(0)
+        for task_num, (bar, lbl) in self._task_bars.items():
+            bar.setValue(0)
+            bar.setFormat("0%")
+            lbl.setText(f"Task {task_num}: Ready")
         for card in (self._card_success, self._card_skip, self._card_fail):
             card.set_value(0)
         self._cancel_btn.setEnabled(True)
@@ -91,17 +127,30 @@ class VideoProgressScreen(QWidget):
         self._step_counter_lbl.setText(f"{done} / {total}")
         pct = int((done / total * 100)) if total > 0 else 0
         self._step_bar.setValue(pct)
-        # Parse step_key to update _file_lbl and reset sub-process bar if finished
-        self._file_lbl.setText(step_key)
-        if "Finished" in step_key or "Skipped" in step_key:
-            self._file_bar.setValue(100)
-            self._file_bar.setFormat("Done")
 
-    def on_file_progress(self, pct: float) -> None:
-        val = int(pct)
-        self._file_bar.setValue(val)
-        time_left = ""
-        self._file_bar.setFormat(f"{pct:.1f}%")
+    def on_task_progress(self, task_num: int, file_name: str, pct: float) -> None:
+        """Update progress for a specific task."""
+        if task_num in self._task_bars:
+            bar, lbl = self._task_bars[task_num]
+            bar.setValue(int(pct))
+            bar.setFormat(f"{pct:.1f}%")
+            lbl.setText(f"Task {task_num}: {file_name} ({pct:.1f}%)")
+
+    def on_task_finished(self, task_num: int, file_name: str) -> None:
+        """Mark a task as finished and reset for next video."""
+        if task_num in self._task_bars:
+            bar, lbl = self._task_bars[task_num]
+            bar.setValue(100)
+            bar.setFormat("Done ✓")
+            lbl.setText(f"Task {task_num}: {file_name} - Done")
+    
+    def reset_task(self, task_num: int) -> None:
+        """Reset a task's progress bar for the next video."""
+        if task_num in self._task_bars:
+            bar, lbl = self._task_bars[task_num]
+            bar.setValue(0)
+            bar.setFormat("0%")
+            lbl.setText(f"Task {task_num}: Ready")
 
     def update_stats(self, success: int, duplicates: int, skipped: int, failed: int) -> None:
         self._card_success.set_value(success)
