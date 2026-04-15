@@ -95,11 +95,15 @@ def _parse_ffmpeg_time(time_str: str) -> float:
     except Exception:
         return 0.0
 
-def detect_hardware_encoder(ffmpeg_path: str, work_dir: Path) -> str:
-    """Detects available hardware encoder by actually trying to encode 1 frame."""
-    encoders = ["h264_nvenc", "h264_qsv", "h264_amf", "libx264"]
+def detect_hardware_encoder(ffmpeg_path: str, work_dir: Path, codec: str = "h264") -> str:
+    """Detects available hardware encoder for the chosen codec."""
+    if codec.lower() == "hevc":
+        encoders = ["hevc_nvenc", "hevc_qsv", "hevc_amf", "libx265"]
+    else:
+        encoders = ["h264_nvenc", "h264_qsv", "h264_amf", "libx264"]
+        
     for enc in encoders:
-        if enc == "libx264":
+        if enc in ["libx264", "libx265"]:
             return enc
         test_file = work_dir / f"test_enc_{enc}.mp4"
         cmd = [
@@ -115,14 +119,15 @@ def detect_hardware_encoder(ffmpeg_path: str, work_dir: Path) -> str:
                 return enc
         except Exception:
             pass
-    return "libx264"
+    return "libx265" if codec.lower() == "hevc" else "libx264"
 
 class VideoConverterConfig:
-    def __init__(self, input_folder: Path, output_folder: Path, max_width: int, max_height: int):
+    def __init__(self, input_folder: Path, output_folder: Path, max_width: int, max_height: int, codec: str = "h264"):
         self.input_folder = input_folder
         self.output_folder = output_folder
         self.max_width = max_width
         self.max_height = max_height
+        self.codec = codec
 
 class VideoConverterResult:
     def __init__(self):
@@ -164,14 +169,27 @@ def run_video_conversion(
     failed_folder = config.output_folder / "_Failed_Conversions"
     
     # 1. Detect best encoder
-    best_encoder = detect_hardware_encoder(ffmpeg_path, config.output_folder)
+    best_encoder = detect_hardware_encoder(ffmpeg_path, config.output_folder, config.codec)
+    
+    # Encoder mapping
+    # H.264
     encoder_flags = {
-        "h264_nvenc": ["-c:v", "h264_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p4"],
-        "h264_qsv":   ["-c:v", "h264_qsv", "-global_quality", "26", "-preset", "balanced"],
-        "h264_amf":   ["-c:v", "h264_amf", "-quality", "balanced"],
-        "libx264":    ["-c:v", "libx264", "-crf", "23", "-preset", "fast"]
+        "h264_nvenc": ["-c:v", "h264_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p4", "-pix_fmt", "yuv420p"],
+        "h264_qsv":   ["-c:v", "h264_qsv", "-global_quality", "26", "-preset", "medium", "-pix_fmt", "yuv420p"],
+        "h264_amf":   ["-c:v", "h264_amf", "-quality", "balanced", "-pix_fmt", "yuv420p"],
+        "libx264":    ["-c:v", "libx264", "-crf", "23", "-preset", "fast", "-pix_fmt", "yuv420p"],
+        
+        # HEVC / H.265 (No pix_fmt specified to allow 10-bit transparently)
+        "hevc_nvenc": ["-c:v", "hevc_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p4", "-tag:v", "hvc1"],
+        "hevc_qsv":   ["-c:v", "hevc_qsv", "-global_quality", "26", "-preset", "medium", "-tag:v", "hvc1"],
+        "hevc_amf":   ["-c:v", "hevc_amf", "-quality", "balanced", "-tag:v", "hvc1"],
+        "libx265":    ["-c:v", "libx265", "-crf", "26", "-preset", "fast", "-tag:v", "hvc1"]
     }
-    enc_args = encoder_flags.get(best_encoder, encoder_flags["libx264"])
+    
+    if best_encoder not in encoder_flags:
+        best_encoder = "libx265" if config.codec == "hevc" else "libx264"
+        
+    enc_args = encoder_flags[best_encoder]
     
     for i, file_path in enumerate(all_files):
         if cancel_flag and cancel_flag.is_set():

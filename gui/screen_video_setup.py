@@ -59,6 +59,13 @@ class VideoSetupScreen(QWidget):
         self._res_cb.setFixedHeight(30)
         res_layout.addWidget(self._res_cb)
         
+        self._codec_cb = QComboBox()
+        self._codec_cb.addItem("H.264 (Maximum Compatibility, 8-bit SDR Forced)", "h264")
+        self._codec_cb.addItem("H.265 / HEVC (Preserve 10-bit HDR Colors, High Quality)", "hevc")
+        self._codec_cb.setCurrentIndex(0)
+        self._codec_cb.setFixedHeight(30)
+        res_layout.addWidget(self._codec_cb)
+
         self._gpu_label = QLabel("GPU Status: Checking...")
         self._gpu_label.setStyleSheet("color: #666; font-weight: bold; margin-top: 5px;")
         res_layout.addWidget(self._gpu_label)
@@ -161,8 +168,21 @@ class VideoSetupScreen(QWidget):
             input_folder=Path(self._input_row.path),
             output_folder=Path(self._output_row.path),
             max_width=w,
-            max_height=h
+            max_height=h,
+            codec=self.codec_choice
         )
+
+    @property
+    def output_folder(self) -> str:
+        return self._output_row.path
+        
+    @property
+    def target_resolution(self) -> str:
+        return self._res_cb.currentData()
+        
+    @property
+    def codec_choice(self) -> str:
+        return self._codec_cb.currentData()
 
     @property
     def run_button(self) -> QPushButton:
