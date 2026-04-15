@@ -224,7 +224,7 @@ def run_video_conversion(
                 "-map", "0:a?",    # Grab audio streams if they exist
                 "-vf", scale_filter
             ] + enc_args + [
-                "-c:a", "copy",    # Try to copy audio to save time
+                "-c:a", "aac", "-b:a", "256k", # Universally compatible audio codec
                 "-sn", "-dn",      # Drop subtitle and data streams
                 "-map_metadata", "-1", # Completely strip metadata so it cannot crash the MP4 muxer
                 str(out_path)
