@@ -5,17 +5,19 @@ from PySide6.QtWidgets import (
 )
 from gui.main_window import MainWindow
 from gui.video_window import VideoWindow
+from gui.live_photo_window import LivePhotoWindow
 
 class HubWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Media Pipeline Hub")
-        self.setMinimumSize(700, 500)
-        self.resize(750, 550)
+        self.setMinimumSize(1020, 500)
+        self.resize(1080, 560)
 
         # Store child windows to keep them alive
         self._classifier_window = None
         self._video_window = None
+        self._live_photo_window = None
         
         self._build_ui()
 
@@ -90,18 +92,43 @@ class HubWindow(QMainWindow):
         vid_layout.addWidget(vid_desc)
         vid_layout.setAlignment(Qt.AlignCenter)
 
+        # Live Photo Converter Button
+        btn_live = QPushButton()
+        btn_live.setFixedSize(300, 220)
+        btn_live.setStyleSheet(self._button_style("#7c3aed", "#6d28d9"))
+        btn_live.setCursor(Qt.PointingHandCursor)
+
+        live_layout = QVBoxLayout(btn_live)
+        live_icon = QLabel("📸")
+        live_icon.setAlignment(Qt.AlignCenter)
+        live_icon.setStyleSheet("font-size: 48px; background: transparent; border: none;")
+        live_title = QLabel("Live Photo\nConverter")
+        live_title.setAlignment(Qt.AlignCenter)
+        live_title.setStyleSheet("font-size: 20px; font-weight: bold; color: white; background: transparent; border: none;")
+        live_desc = QLabel("Extract the sharpest still image from Live Photos (MP4/MOV) with EXIF preserved.")
+        live_desc.setAlignment(Qt.AlignCenter)
+        live_desc.setWordWrap(True)
+        live_desc.setStyleSheet("font-size: 13px; color: #ddd6fe; background: transparent; border: none; padding: 0 10px;")
+
+        live_layout.addWidget(live_icon)
+        live_layout.addWidget(live_title)
+        live_layout.addWidget(live_desc)
+        live_layout.setAlignment(Qt.AlignCenter)
+
         # Add to layout
         buttons_layout.addStretch()
         buttons_layout.addWidget(btn_classifier)
         buttons_layout.addWidget(btn_video)
+        buttons_layout.addWidget(btn_live)
         buttons_layout.addStretch()
-        
+
         root.addLayout(buttons_layout)
         root.addStretch()
 
         # Connect actions
         btn_classifier.clicked.connect(self._open_classifier)
         btn_video.clicked.connect(self._open_converter)
+        btn_live.clicked.connect(self._open_live_photo)
 
     def _button_style(self, bg_color: str, hover_color: str) -> str:
         return f"""
@@ -131,3 +158,9 @@ class HubWindow(QMainWindow):
         if not self._video_window:
             self._video_window = VideoWindow(on_back_to_hub=self.show)
         self._video_window.show()
+
+    def _open_live_photo(self) -> None:
+        self.hide()
+        if not self._live_photo_window:
+            self._live_photo_window = LivePhotoWindow(on_back_to_hub=self.show)
+        self._live_photo_window.show()

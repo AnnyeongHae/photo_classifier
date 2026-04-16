@@ -119,6 +119,7 @@ def step_nuitka() -> int:
         "--include-package=core",
         "--include-package=gui",
         "--include-package=workers",
+        "--include-package=LivePhotoConverter",
         "--windows-console-mode=disable",
         f"--output-dir={DIST_DIR}",
         "--output-filename=PhotoClassifier.exe",

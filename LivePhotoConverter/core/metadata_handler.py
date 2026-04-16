@@ -44,8 +44,14 @@ class MetadataHandler:
         if found:
             return found
 
-        # Project-local Windows installations (any version under the project root)
+        # Main-app bundled binary: <project_root>/assets/exiftool.exe
+        # (Nuitka standalone build copies assets/ next to the exe)
         project_root = Path(__file__).parent.parent.parent
+        bundled = project_root / "assets" / "exiftool.exe"
+        if bundled.exists():
+            return str(bundled)
+
+        # Project-local Windows installations (any version under the project root)
         for candidate in sorted(project_root.glob("exiftool*/exiftool.exe")):
             if candidate.exists():
                 return str(candidate)

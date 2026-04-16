@@ -1,0 +1,115 @@
+# -*- coding: utf-8 -*-
+from PySide6.QtCore import Slot
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QStackedWidget
+
+from gui.screen_livephoto_setup import LivePhotoSetupScreen
+from gui.screen_livephoto_progress import LivePhotoProgressScreen
+from gui.screen_livephoto_summary import LivePhotoSummaryScreen
+from workers.live_photo_worker import LivePhotoWorker, LivePhotoResult
+
+_SCREEN_SETUP = 0
+_SCREEN_PROGRESS = 1
+_SCREEN_SUMMARY = 2
+
+
+class LivePhotoWindow(QMainWindow):
+    def __init__(self, on_back_to_hub=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("라이브 포토 변환기")
+        self.setMinimumSize(780, 640)
+        self.resize(840, 700)
+
+        self._on_back_to_hub = on_back_to_hub
+        self._worker: LivePhotoWorker | None = None
+
+        self._stack = QStackedWidget()
+        self.setCentralWidget(self._stack)
+
+        self._setup_screen = LivePhotoSetupScreen()
+        self._progress_screen = LivePhotoProgressScreen(on_cancel=self._cancel_pipeline)
+        self._summary_screen = LivePhotoSummaryScreen(on_process_more=self._go_setup)
+
+        self._stack.addWidget(self._setup_screen)
+        self._stack.addWidget(self._progress_screen)
+        self._stack.addWidget(self._summary_screen)
+
+        self._setup_screen.run_button.clicked.connect(self._start_pipeline)
+
+        if self._on_back_to_hub:
+            self._setup_screen.back_button.clicked.connect(self._back_to_hub)
+            self._summary_screen.back_button.clicked.connect(self._back_to_hub)
+        else:
+            self._setup_screen.back_button.hide()
+            self._summary_screen.back_button.hide()
+
+        self._stack.setCurrentIndex(_SCREEN_SETUP)
+
+    def _back_to_hub(self) -> None:
+        self.hide()
+        if self._on_back_to_hub:
+            self._on_back_to_hub()
+
+    def _go_setup(self) -> None:
+        self._stack.setCurrentIndex(_SCREEN_SETUP)
+
+    def _start_pipeline(self) -> None:
+        if not self._setup_screen.validate():
+            return
+
+        config = self._setup_screen.build_config()
+
+        self._progress_screen.reset()
+        self._stack.setCurrentIndex(_SCREEN_PROGRESS)
+
+        self._worker = LivePhotoWorker(config=config, parent=self)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.stats_updated.connect(self._on_stats_updated)
+        self._worker.finished.connect(self._on_finished)
+        self._worker.error.connect(self._on_error)
+        self._worker.start()
+
+    def _cancel_pipeline(self) -> None:
+        if self._worker and self._worker.isRunning():
+            self._worker.cancel()
+
+    @Slot(str, int, int)
+    def _on_progress(self, label: str, done: int, total: int) -> None:
+        self._progress_screen.on_progress(label, done, total)
+
+    @Slot(int, int, int)
+    def _on_stats_updated(self, processed: int, skipped: int, failed: int) -> None:
+        self._progress_screen.update_stats(processed, skipped, failed)
+
+    @Slot(object)
+    def _on_finished(self, result: LivePhotoResult) -> None:
+        self._worker = None
+        if result.cancelled:
+            QMessageBox.information(self, "취소됨", "변환이 취소되었습니다.")
+            self._stack.setCurrentIndex(_SCREEN_SETUP)
+            return
+        self._summary_screen.load_result(result)
+        self._stack.setCurrentIndex(_SCREEN_SUMMARY)
+
+    @Slot(str)
+    def _on_error(self, message: str) -> None:
+        self._worker = None
+        QMessageBox.critical(self, "오류", f"변환 중 오류가 발생했습니다:\n\n{message}")
+        self._stack.setCurrentIndex(_SCREEN_SETUP)
+
+    def closeEvent(self, event) -> None:
+        if self._worker and self._worker.isRunning():
+            reply = QMessageBox.question(
+                self,
+                "종료 확인",
+                "변환이 진행 중입니다. 종료하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                self._worker.cancel()
+                self._worker.wait(3000)
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
