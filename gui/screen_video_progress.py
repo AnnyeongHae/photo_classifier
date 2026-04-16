@@ -80,12 +80,13 @@ class VideoProgressScreen(QWidget):
     def set_max_concurrent(self, max_concurrent: int) -> None:
         """Set the number of concurrent tasks and create corresponding progress bars."""
         self._max_concurrent = max_concurrent
-        # Clear existing task bars
-        for bar, lbl in self._task_bars.values():
-            bar.deleteLater()
-            lbl.deleteLater()
+        # Remove all items from layout (deleteLater alone doesn't remove from layout)
+        while self._tasks_layout.count():
+            item = self._tasks_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
         self._task_bars.clear()
-        
+
         # Create new task bars
         for task_num in range(1, max_concurrent + 1):
             # Task label

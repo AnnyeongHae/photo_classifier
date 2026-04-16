@@ -268,17 +268,12 @@ def _run_encode_pass(
     encoder: str,
     scale_filter: str,
     duration: float,
-    progress_cb: Callable = None,
     task_progress_cb: Callable = None,
     task_number: int = 0,
-    current_index: int = 0,
-    total_files: int = 0,
     stats: ThreadSafeStats = None,
     cancel_flag: threading.Event = None,
     error_log_lines: int = DEFAULT_GPU_ERROR_LOG_LINES,
     worker_context = None,
-    task_number_display: int = 0,
-    total_tasks_display: int = 0
 ) -> tuple[int, str]:
     """
     Run a single encoding pass and return (return_code, error_log).
@@ -424,22 +419,30 @@ def run_video_conversion(
     if progress_cb:
         progress_cb(f"Starting conversion of {total_to_convert} files...", 0, total_to_convert, stats.get_all())
     
+    # GUI slot queue: each slot corresponds to a task bar in the progress screen.
+    # Tasks acquire a slot when they start and release it when done,
+    # so slot numbers always stay within 1..max_concurrent regardless of
+    # how many total files there are.
+    slot_queue: Queue = Queue()
+    for _s in range(1, max_concurrent + 1):
+        slot_queue.put(_s)
+
     # Parallel conversion using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
         futures_to_index = {}
         completed_count = 0
-        
+
         for idx, (convert_idx, file_path, w, h) in enumerate(files_to_convert):
             if cancel_flag and cancel_flag.is_set():
                 result.cancelled = True
                 break
-            
+
             out_path = _resolve_output_path(file_path, config.output_folder)
-            scale_filter = f"scale='min({config.max_width},iw)':'min({config.max_height},ih)'"
+            scale_filter = f"scale={config.max_width}:{config.max_height}:force_original_aspect_ratio=decrease"
             duration = get_video_duration(ffprobe_path, file_path)
-            
-            logger.info(f"[Task {idx+1}] Queuing {file_path.name} for conversion via {best_encoder}")
-            
+
+            logger.info(f"[Task {idx+1}/{total_to_convert}] Queuing {file_path.name} for conversion via {best_encoder}")
+
             future = executor.submit(
                 _convert_video_task,
                 ffmpeg_path,
@@ -449,18 +452,16 @@ def run_video_conversion(
                 cpu_fallback_encoder,
                 scale_filter,
                 duration,
-                progress_cb,
                 task_progress_cb,
                 task_finished_cb,
-                convert_idx,  # Use actual conversion index
-                total_to_convert,  # Use actual conversion count
                 stats,
                 cancel_flag,
                 config.error_log_lines,
                 worker_context,
                 failed_folder,
-                idx + 1,  # Task number (1-indexed for display)
-                len(files_to_convert)  # Total tasks
+                idx + 1,            # sequential index for logging
+                total_to_convert,
+                slot_queue,         # GUI slot pool
             )
             futures_to_index[future] = (idx + 1, file_path.name)
         
@@ -492,91 +493,72 @@ def _convert_video_task(
     cpu_fallback_encoder: str,
     scale_filter: str,
     duration: float,
-    progress_cb: Callable,
     task_progress_cb: Callable,
     task_finished_cb: Callable,
-    current_index: int,
-    total_files: int,
     stats: ThreadSafeStats,
     cancel_flag: threading.Event,
     error_log_lines: int,
     worker_context,
     failed_folder: Path,
-    task_number: int,
-    total_tasks: int
+    task_number: int,   # sequential index for logging (1-based)
+    total_tasks: int,
+    slot_queue: Queue,  # GUI slot pool (1..max_concurrent)
 ) -> None:
     """
     Task function for parallel video conversion.
+    Acquires a GUI slot from slot_queue at start, releases it when done
+    so slot numbers never exceed max_concurrent regardless of total file count.
     """
     if cancel_flag and cancel_flag.is_set():
         return
-    
-    # Report task start
-    logger.info(f"[Task {task_number}/{total_tasks}] Starting: {file_path.name}")
-    if task_progress_cb:
-        task_progress_cb(task_number, file_path.name, 0.0)
-    
-    retcode, log_str = _run_encode_pass(
-        ffmpeg_path,
-        file_path,
-        out_path,
-        best_encoder,
-        scale_filter,
-        duration,
-        progress_cb,
-        task_progress_cb,
-        task_number,
-        current_index,
-        total_files,
-        stats,
-        cancel_flag,
-        error_log_lines,
-        worker_context,
-        task_number,
-        total_tasks
-    )
-    
-    if cancel_flag and cancel_flag.is_set():
-        return
-    
-    # Fallback to CPU if GPU encoding failed
-    if retcode != 0 and best_encoder != cpu_fallback_encoder:
-        logger.warning(f"[Task {task_number}] GPU Encoding failed (Code: {retcode}) for {file_path.name}. Falling back to CPU.")
-        if out_path.exists():
-            out_path.unlink()
+
+    gui_slot = slot_queue.get()
+    try:
+        logger.info(f"[Task {task_number}/{total_tasks}] Starting: {file_path.name}")
+        if task_progress_cb:
+            task_progress_cb(gui_slot, file_path.name, 0.0)
+
         retcode, log_str = _run_encode_pass(
-            ffmpeg_path,
-            file_path,
-            out_path,
-            cpu_fallback_encoder,
-            scale_filter,
-            duration,
-            progress_cb,
-            task_progress_cb,
-            task_number,
-            current_index,
-            total_files,
-            stats,
-            cancel_flag,
-            error_log_lines,
-            worker_context,
-            task_number,
-            total_tasks
+            ffmpeg_path, file_path, out_path,
+            best_encoder, scale_filter, duration,
+            task_progress_cb, gui_slot,
+            stats, cancel_flag, error_log_lines, worker_context,
         )
-    
-    # Handle result
-    if retcode != 0:
-        logger.error(f"[Task {task_number}] Failed converting {file_path.name}. Exit Code: {retcode}")
-        stats.increment("failed")
-        failed_folder.mkdir(parents=True, exist_ok=True)
-        with open(failed_folder / f"{file_path.name}_FAILED.txt", "w", encoding="utf-8") as err_f:
-            err_f.write(f"Failed to convert: {file_path}\nExit Code: {retcode}\nFFmpeg Log:\n{log_str}")
-        if out_path.exists():
-            out_path.unlink()
-    else:
-        stats.increment("success")
-        logger.info(f"[Task {task_number}] ✓ Successfully converted {file_path.name}")
-    
-    # Mark task as finished
-    if task_finished_cb:
-        task_finished_cb(task_number, file_path.name)
+
+        if cancel_flag and cancel_flag.is_set():
+            if out_path.exists():
+                out_path.unlink()
+            return
+
+        # Fallback to CPU if GPU encoding failed
+        if retcode != 0 and best_encoder != cpu_fallback_encoder:
+            logger.warning(
+                f"[Task {task_number}] GPU encoding failed (code {retcode}) for "
+                f"{file_path.name}. Falling back to CPU."
+            )
+            if out_path.exists():
+                out_path.unlink()
+            retcode, log_str = _run_encode_pass(
+                ffmpeg_path, file_path, out_path,
+                cpu_fallback_encoder, scale_filter, duration,
+                task_progress_cb, gui_slot,
+                stats, cancel_flag, error_log_lines, worker_context,
+            )
+
+        # Handle result
+        if retcode != 0:
+            logger.error(f"[Task {task_number}] Failed converting {file_path.name}. Exit Code: {retcode}")
+            stats.increment("failed")
+            failed_folder.mkdir(parents=True, exist_ok=True)
+            with open(failed_folder / f"{file_path.name}_FAILED.txt", "w", encoding="utf-8") as err_f:
+                err_f.write(f"Failed to convert: {file_path}\nExit Code: {retcode}\nFFmpeg Log:\n{log_str}")
+            if out_path.exists():
+                out_path.unlink()
+        else:
+            stats.increment("success")
+            logger.info(f"[Task {task_number}] ✓ Successfully converted {file_path.name}")
+
+        if task_finished_cb:
+            task_finished_cb(gui_slot, file_path.name)
+    finally:
+        slot_queue.put(gui_slot)
