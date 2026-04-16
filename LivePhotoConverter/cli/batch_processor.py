@@ -172,13 +172,11 @@ class BatchProcessor:
         
         # Preserve metadata if available
         if self.preserve_metadata and self.metadata_handler:
-            datetime_str = self.metadata_handler.get_datetime_from_video(video_file)
-            overwrite_tags = None
-            if datetime_str:
-                overwrite_tags = {"DateTimeOriginal": datetime_str}
-            
-            self.metadata_handler.copy_metadata_to_image(video_file, output_file, overwrite_tags)
-            logger.info(f"  -> Metadata preserved")
+            ok = self.metadata_handler.copy_metadata_to_image(video_file, output_file)
+            if ok:
+                logger.info("  -> Metadata preserved")
+            else:
+                logger.warning("  -> Metadata copy failed (output saved without EXIF)")
     
     def process_with_manual_review(
         self,
@@ -217,22 +215,24 @@ class BatchProcessor:
                 logger.info("User cancelled selection")
                 return None
             
-            # Save selected frame
+            # Save selected frame (respect configured output format)
             output_folder.mkdir(parents=True, exist_ok=True)
-            output_file = output_folder / f"{video_file.stem}.jpg"
-            
-            self.image_converter.save_frame_as_jpeg(frames[selected_idx], output_file)
-            logger.info(f"Saved: {output_file}")
+            file_ext = ".png" if self.output_format == "png" else ".jpg"
+            output_file = output_folder / f"{video_file.stem}{file_ext}"
+
+            if self.output_format == "png":
+                self.image_converter.save_frame_as_png(frames[selected_idx], output_file)
+            else:
+                self.image_converter.save_frame_as_jpeg(frames[selected_idx], output_file)
+            logger.info(f"Saved: {output_file} ({self.output_format.upper()})")
             
             # Preserve metadata
             if self.preserve_metadata and self.metadata_handler:
-                datetime_str = self.metadata_handler.get_datetime_from_video(video_file)
-                overwrite_tags = None
-                if datetime_str:
-                    overwrite_tags = {"DateTimeOriginal": datetime_str}
-                
-                self.metadata_handler.copy_metadata_to_image(video_file, output_file, overwrite_tags)
-                logger.info("Metadata preserved")
+                ok = self.metadata_handler.copy_metadata_to_image(video_file, output_file)
+                if ok:
+                    logger.info("Metadata preserved")
+                else:
+                    logger.warning("Metadata copy failed (output saved without EXIF)")
             
             return output_file
         

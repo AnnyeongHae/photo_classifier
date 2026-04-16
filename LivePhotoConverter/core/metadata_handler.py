@@ -122,28 +122,42 @@ class MetadataHandler:
             return False
         
         try:
+            # Copy only image-compatible metadata groups.
+            # "-all:all>all:all" is intentionally avoided here: it also tries to
+            # copy video-only atoms (QuickTime track data, etc.) which cannot map
+            # to JPEG/PNG EXIF and cause exiftool warnings/failures.
             cmd = [
                 self.exiftool_path,
                 "-overwrite_original",
-                "-TagsFromFile",
-                str(source_video),
-                "-all:all>all:all",  # Copy all tags
-                str(target_image)
+                "-TagsFromFile", str(source_video),
+                "-EXIF:All",   # camera settings, datetime, orientation …
+                "-GPS:All",    # GPS coordinates & altitude
+                "-IPTC:All",   # copyright, keywords
+                "-XMP:All",    # ratings, labels, extended metadata
+                # iPhone Live Photos store creation date in QuickTime Keys;
+                # copy to DateTimeOriginal only when EXIF field is absent (<)
+                "-DateTimeOriginal<QuickTime:ContentCreateDate",
+                "-DateTimeOriginal<QuickTime:CreateDate",
             ]
-            
-            # Add custom tags if provided
+
+            # Add caller-supplied tag overrides (appended after TagsFromFile block,
+            # before the target path, so they take precedence)
             if overwrite_tags:
                 for tag, value in overwrite_tags.items():
-                    cmd.insert(-1, f"-{tag}={value}")
-            
+                    cmd.append(f"-{tag}={value}")
+
+            cmd.append(str(target_image))
+
             result = subprocess.run(cmd, capture_output=True, text=True)
-            
+
             if result.returncode != 0:
-                logger.warning(f"exiftool warning/error: {result.stderr}")
-                # exiftool returns 0 even with warnings, so check for actual errors
-                if "Error" in result.stderr:
-                    return False
-            
+                logger.warning(f"exiftool error (rc={result.returncode}): {result.stderr.strip()}")
+                return False
+
+            # exiftool exits 0 even on per-tag warnings; only surface real errors
+            if result.stderr and "Error" in result.stderr:
+                logger.warning(f"exiftool reported errors: {result.stderr.strip()}")
+
             return True
         
         except Exception as e:

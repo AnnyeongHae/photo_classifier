@@ -70,32 +70,52 @@ class ImageConverter:
         self,
         frame_rgb: np.ndarray,
         output_path: Union[str, Path],
-        create_dirs: bool = True
+        create_dirs: bool = True,
+        compression: int = 1
     ) -> Path:
         """
         Save an RGB frame as PNG (lossless).
-        
+
+        All PNG compression levels are pixel-perfect lossless; the level only
+        affects file size vs. write speed.  compression=1 is fast with a slight
+        size penalty; compression=9 is smallest but slow.
+
         Args:
             frame_rgb: RGB numpy array (H, W, 3) with values 0-255
             output_path: Destination PNG file path
             create_dirs: If True, create parent directories if they don't exist
-            
+            compression: zlib compression level 0-9 (default 1 — fast, lossless)
+
         Returns:
             Path to saved file
+
+        Raises:
+            ValueError: If frame format is invalid or compression out of range
+            RuntimeError: If saving fails
         """
         output_path = Path(output_path)
-        
+
         if len(frame_rgb.shape) != 3 or frame_rgb.shape[2] != 3:
             raise ValueError(f"Expected RGB frame (H, W, 3), got shape {frame_rgb.shape}")
-        
+
+        if not 0 <= compression <= 9:
+            raise ValueError("compression must be between 0 and 9")
+
         if create_dirs:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Convert RGB to BGR for OpenCV
         frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-        
-        cv2.imwrite(str(output_path), frame_bgr)
-        
+
+        success = cv2.imwrite(
+            str(output_path),
+            frame_bgr,
+            [cv2.IMWRITE_PNG_COMPRESSION, compression]
+        )
+
+        if not success:
+            raise RuntimeError(f"Failed to save PNG: {output_path}")
+
         return output_path
     
     def resize_frame(
