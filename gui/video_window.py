@@ -15,9 +15,9 @@ _SCREEN_SUMMARY = 2
 class VideoWindow(QMainWindow):
     def __init__(self, on_back_to_hub=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Video Resolution Converter")
-        self.setMinimumSize(820, 620)
-        self.resize(860, 660)
+        self.setWindowTitle("비디오 해상도 변환기")
+        self.setMinimumSize(920, 720)
+        self.resize(980, 780)
 
         self._on_back_to_hub = on_back_to_hub
         self._worker: VideoWorker | None = None

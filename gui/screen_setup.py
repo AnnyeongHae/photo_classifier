@@ -25,20 +25,52 @@ from core.pipeline import PipelineConfig
 
 
 class FolderRow(QWidget):
-    def __init__(self, label: str, placeholder: str, parent=None):
+    def __init__(self, label: str, placeholder: str, browse_label: str = "찾기", parent=None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
         lbl = QLabel(label)
-        lbl.setFixedWidth(110)
+        lbl.setFixedWidth(80)
         lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lbl.setStyleSheet("font-weight: 600; color: #111827; font-size: 13px; background: transparent;")
 
         self.line_edit = QLineEdit()
         self.line_edit.setPlaceholderText(placeholder)
+        self.line_edit.setFixedHeight(36)
+        self.line_edit.setStyleSheet(
+            "QLineEdit {"
+            "  border: 1.5px solid #d1d5db;"
+            "  border-radius: 6px;"
+            "  padding: 4px 10px;"
+            "  font-size: 13px;"
+            "  color: #111827;"
+            "  background: #f9fafb;"
+            "}"
+            "QLineEdit:focus {"
+            "  border-color: #2563eb;"
+            "  color: #111827;"
+            "  background: #ffffff;"
+            "}"
+        )
 
-        btn = QPushButton("Browse")
-        btn.setFixedWidth(90)
+        btn = QPushButton(browse_label)
+        btn.setFixedWidth(72)
+        btn.setFixedHeight(36)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setStyleSheet(
+            "QPushButton {"
+            "  background: #f3f4f6;"
+            "  border: 1.5px solid #d1d5db;"
+            "  border-radius: 6px;"
+            "  font-size: 13px;"
+            "  font-weight: 600;"
+            "  color: #111827;"
+            "}"
+            "QPushButton:hover { background: #e5e7eb; border-color: #9ca3af; color: #111827; }"
+            "QPushButton:pressed { background: #d1d5db; color: #111827; }"
+        )
         btn.clicked.connect(self._browse)
 
         layout.addWidget(lbl)
