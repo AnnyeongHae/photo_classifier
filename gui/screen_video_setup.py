@@ -14,6 +14,7 @@ from core.video_converter import logger
 class VideoSetupScreen(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._detected_encoder: str | None = None  # cached from _detect_gpu
         self._build_ui()
         self._check_dependencies()
 
@@ -67,11 +68,50 @@ class VideoSetupScreen(QWidget):
         self._codec_cb.currentIndexChanged.connect(self._on_codec_changed)
         res_layout.addWidget(self._codec_cb)
 
+        self._quality_cb = QComboBox()
+        self._quality_cb.addItem("고화질 (CQ 18) — 원본에 가장 가까운 화질, 용량 큼", 18)
+        self._quality_cb.addItem("균형 (CQ 23) — 좋은 화질, 적당한 용량 절약", 23)
+        self._quality_cb.addItem("용량 절약 (CQ 28) — 눈에 띄는 압축, 용량 매우 작음", 28)
+        self._quality_cb.setCurrentIndex(0)
+        self._quality_cb.setFixedHeight(30)
+        res_layout.addWidget(self._quality_cb)
+
         self._gpu_label = QLabel("GPU Status: Checking...")
         self._gpu_label.setStyleSheet("color: #666; font-weight: bold; margin-top: 5px;")
         res_layout.addWidget(self._gpu_label)
-        
+
         root.addWidget(res_group)
+
+        # Conversion options group
+        conv_group = QGroupBox("변환 옵션")
+        conv_layout = QVBoxLayout(conv_group)
+
+        self._dup_cb = QComboBox()
+        self._dup_cb.addItem("이미 변환된 파일: 건너뛰기 (권장)", "skip")
+        self._dup_cb.addItem("이미 변환된 파일: 덮어쓰기", "overwrite")
+        self._dup_cb.addItem("이미 변환된 파일: 번호 추가 (_1, _2…)", "rename")
+        self._dup_cb.setCurrentIndex(0)
+        self._dup_cb.setFixedHeight(30)
+        conv_layout.addWidget(self._dup_cb)
+
+        self._audio_cb = QComboBox()
+        self._audio_cb.addItem("오디오: 256 kbps (고음질, 기본값)", "256k")
+        self._audio_cb.addItem("오디오: 192 kbps (균형)", "192k")
+        self._audio_cb.addItem("오디오: 128 kbps (용량 절약)", "128k")
+        self._audio_cb.setCurrentIndex(0)
+        self._audio_cb.setFixedHeight(30)
+        conv_layout.addWidget(self._audio_cb)
+
+        self._concurrent_cb = QComboBox()
+        self._concurrent_cb.addItem("동시 처리: 자동 (GPU/CPU에 따라 결정)", 0)
+        self._concurrent_cb.addItem("동시 처리: 1개 (시스템 부하 최소화)", 1)
+        self._concurrent_cb.addItem("동시 처리: 2개", 2)
+        self._concurrent_cb.addItem("동시 처리: 3개", 3)
+        self._concurrent_cb.setCurrentIndex(0)
+        self._concurrent_cb.setFixedHeight(30)
+        conv_layout.addWidget(self._concurrent_cb)
+
+        root.addWidget(conv_group)
         
         # Dependencies status
         self._deps_label = QLabel()
@@ -96,6 +136,7 @@ class VideoSetupScreen(QWidget):
         root.addWidget(self._back_btn)
 
     def _on_codec_changed(self):
+        self._detected_encoder = None  # invalidate cache when codec changes
         try:
             ffmpeg_path = resolve_ffmpeg_path()
             self._detect_gpu(ffmpeg_path)
@@ -131,6 +172,7 @@ class VideoSetupScreen(QWidget):
         self._gpu_label.setText(f"GPU Status: Scanning hardware for {self.codec_choice.upper()}...")
         self._gpu_label.repaint()
         encoder = detect_hardware_encoder(ffmpeg_path, Path.home(), self.codec_choice)
+        self._detected_encoder = encoder  # cache for build_config()
         if encoder not in ["libx264", "libx265"]:
             name = "NVIDIA NVENC" if "nvenc" in encoder else "Intel QSV" if "qsv" in encoder else "AMD AMF" if "amf" in encoder else encoder
             self._gpu_label.setText(f"⚡ GPU Acceleration Active ({name} for {self.codec_choice.upper()}) - Hyper speed encoding ready!")
@@ -166,13 +208,18 @@ class VideoSetupScreen(QWidget):
             w, h = 1280, 720
         elif res_key == "4k":
             w, h = 3840, 2160
-            
+
         return VideoConverterConfig(
             input_folder=Path(self._input_row.path),
             output_folder=Path(self._output_row.path),
             max_width=w,
             max_height=h,
-            codec=self.codec_choice
+            codec=self.codec_choice,
+            encoder=self._detected_encoder,
+            quality=self._quality_cb.currentData(),
+            audio_bitrate=self._audio_cb.currentData(),
+            duplicate_handling=self._dup_cb.currentData(),
+            max_concurrent_encodes=self._concurrent_cb.currentData(),
         )
 
     @property

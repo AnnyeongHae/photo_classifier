@@ -107,23 +107,34 @@ def _parse_ffmpeg_time(time_str: str) -> float:
         return 0.0
 
 class EncoderConfig:
-    """Encoder configuration for different codec/encoder combinations."""
-    PRESETS = {
-        "h264_nvenc": ["-c:v", "h264_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p4", "-pix_fmt", "yuv420p"],
-        "h264_qsv":   ["-c:v", "h264_qsv", "-global_quality", "26", "-preset", "medium", "-pix_fmt", "yuv420p"],
-        "h264_amf":   ["-c:v", "h264_amf", "-quality", "balanced", "-pix_fmt", "yuv420p"],
-        "libx264":    ["-c:v", "libx264", "-crf", "23", "-preset", "fast", "-pix_fmt", "yuv420p"],
-        
-        "hevc_nvenc": ["-c:v", "hevc_nvenc", "-cq", "26", "-b:v", "0", "-preset", "p4", "-tag:v", "hvc1"],
-        "hevc_qsv":   ["-c:v", "hevc_qsv", "-global_quality", "26", "-preset", "medium", "-tag:v", "hvc1"],
-        "hevc_amf":   ["-c:v", "hevc_amf", "-quality", "balanced", "-tag:v", "hvc1"],
-        "libx265":    ["-c:v", "libx265", "-crf", "26", "-preset", "fast", "-tag:v", "hvc1"]
-    }
-    
+    """Encoder configuration for different codec/encoder combinations.
+
+    Quality parameter (CRF/CQ):
+      18 = 고화질  — visually transparent, nearly indistinguishable from source
+      23 = 균형    — good quality, noticeably smaller files (FFmpeg default)
+      28 = 용량 절약 — visible degradation on detailed scenes, very small files
+
+    Note: AMD AMF does not support CQ/CRF directly. It uses fixed-QP mode (-qp_i/p/b)
+    as the closest equivalent.
+    """
+
     @classmethod
-    def get_encoder_args(cls, encoder: str) -> list:
-        """Get encoder arguments for the specified encoder."""
-        return cls.PRESETS.get(encoder, cls.PRESETS["libx264"])
+    def get_encoder_args(cls, encoder: str, quality: int = 18) -> list:
+        """Build encoder arguments for the specified encoder and quality value."""
+        q = str(quality)
+        table = {
+            # --- H.264 encoders ---
+            "h264_nvenc": ["-c:v", "h264_nvenc", "-cq", q,       "-b:v", "0", "-preset", "p4",     "-pix_fmt", "yuv420p"],
+            "h264_qsv":   ["-c:v", "h264_qsv",   "-global_quality", q, "-look_ahead", "1", "-preset", "medium", "-pix_fmt", "yuv420p"],
+            "h264_amf":   ["-c:v", "h264_amf",   "-qp_i", q, "-qp_p", q, "-qp_b", q,                           "-pix_fmt", "yuv420p"],
+            "libx264":    ["-c:v", "libx264",     "-crf", q,      "-preset", "medium",              "-pix_fmt", "yuv420p"],
+            # --- H.265 / HEVC encoders ---
+            "hevc_nvenc": ["-c:v", "hevc_nvenc",  "-cq", q,       "-b:v", "0", "-preset", "p4",     "-tag:v", "hvc1"],
+            "hevc_qsv":   ["-c:v", "hevc_qsv",    "-global_quality", q, "-look_ahead", "1", "-preset", "medium", "-tag:v", "hvc1"],
+            "hevc_amf":   ["-c:v", "hevc_amf",    "-qp_i", q, "-qp_p", q, "-qp_b", q,                           "-tag:v", "hvc1"],
+            "libx265":    ["-c:v", "libx265",      "-crf", q,     "-preset", "medium",              "-tag:v", "hvc1"],
+        }
+        return table.get(encoder, table["libx264"])
 
 class ThreadSafeStats:
     """Thread-safe statistics tracking."""
@@ -151,11 +162,31 @@ class ThreadSafeStats:
         with self._lock:
             return self._stats.get(key, default)
 
+def _try_encoder(ffmpeg_path: str, enc: str, cmd: list, test_file: Path) -> tuple[bool, str]:
+    """Run one encoder test command. Returns (success, stderr_snippet)."""
+    try:
+        res = subprocess.run(cmd, capture_output=True, creationflags=SUBPROCESS_FLAGS, timeout=15)
+        if test_file.exists():
+            test_file.unlink()
+        stderr = res.stderr.decode('utf-8', errors='replace') if isinstance(res.stderr, bytes) else str(res.stderr)
+        if res.returncode == 0:
+            return True, ""
+        return False, stderr.strip()[-400:]
+    except subprocess.TimeoutExpired:
+        if test_file.exists():
+            test_file.unlink()
+        return False, "timeout"
+    except Exception as e:
+        if test_file.exists():
+            test_file.unlink()
+        return False, str(e)
+
+
 def detect_hardware_encoder(ffmpeg_path: str, work_dir: Path, codec: str = "h264") -> str:
     """Detects available hardware encoder for the chosen codec.
-    
+
     Tries GPU encoders first, falls back to CPU software encoders only if all GPU attempts fail.
-    For NVIDIA with Optimus, uses CUDA-based testing to force GPU activation.
+    All failures are logged at INFO level so the user can diagnose GPU issues.
     """
     if codec.lower() == "hevc":
         gpu_encoders = ["hevc_nvenc", "hevc_qsv", "hevc_amf"]
@@ -163,46 +194,35 @@ def detect_hardware_encoder(ffmpeg_path: str, work_dir: Path, codec: str = "h264
     else:
         gpu_encoders = ["h264_nvenc", "h264_qsv", "h264_amf"]
         cpu_encoder = "libx264"
-    
-    # Try GPU encoders first
+
+    # Ensure work_dir exists — if it doesn't, the test file write fails and every
+    # encoder looks broken even if the GPU is perfectly healthy.
+    work_dir.mkdir(parents=True, exist_ok=True)
+
     for enc in gpu_encoders:
         test_file = work_dir / f"test_enc_{enc}.mp4"
-        
-        # For NVIDIA with Optimus, use CUDA-based test to wake up GPU
+        base_cmd = [
+            ffmpeg_path, "-y", "-f", "lavfi", "-i", "color=c=black:s=128x128",
+            "-frames:v", "10", "-c:v", enc,
+        ]
+
         if enc.endswith("_nvenc"):
-            cmd = [
-                ffmpeg_path, "-y", "-f", "lavfi", "-i", "color=c=black:s=128x128", 
-                "-t", "1",  # 1 second duration to force proper GPU initialization
-                "-vframes", "1", "-c:v", enc, "-gpu", "0", str(test_file)
+            # NVIDIA: try without -gpu flag first (works on most modern drivers),
+            # then retry with -gpu 0 (sometimes needed on multi-GPU / Optimus setups).
+            attempts = [
+                base_cmd + [str(test_file)],
+                base_cmd + ["-gpu", "0", str(test_file)],
             ]
         else:
-            cmd = [
-                ffmpeg_path, "-y", "-f", "lavfi", "-i", "color=c=black:s=128x128", 
-                "-vframes", "1", "-c:v", enc, str(test_file)
-            ]
-        
-        try:
-            res = subprocess.run(cmd, capture_output=True, creationflags=SUBPROCESS_FLAGS, timeout=15)
-            if test_file.exists():
-                test_file.unlink()
-            if res.returncode == 0:
+            attempts = [base_cmd + [str(test_file)]]
+
+        for cmd in attempts:
+            ok, err = _try_encoder(ffmpeg_path, enc, cmd, test_file)
+            if ok:
                 logger.info(f"✓ Hardware encoder detected: {enc}")
                 return enc
-            else:
-                # Log error for debugging NVIDIA Optimus issues
-                stderr = res.stderr.decode('utf-8', errors='replace') if isinstance(res.stderr, bytes) else res.stderr
-                if "nvenc" in enc.lower() and ("not found" in stderr.lower() or "no such" in stderr.lower()):
-                    logger.debug(f"NVIDIA Optimus detected: nvenc unavailable. Trying other encoders...")
-        except subprocess.TimeoutExpired:
-            logger.debug(f"Encoder test timed out for {enc}")
-            if test_file.exists():
-                test_file.unlink()
-        except Exception as e:
-            logger.debug(f"Encoder test failed for {enc}: {e}")
-            if test_file.exists():
-                test_file.unlink()
-    
-    # All GPU encoders failed, use CPU fallback
+            logger.info(f"✗ {enc} unavailable: {err[:200] if err else 'unknown error'}")
+
     logger.warning(f"No GPU encoder available. Falling back to CPU: {cpu_encoder}")
     return cpu_encoder
 
@@ -223,13 +243,17 @@ def estimate_concurrent_encodes(best_encoder: str) -> int:
 
 class VideoConverterConfig:
     def __init__(
-        self, 
-        input_folder: Path, 
-        output_folder: Path, 
-        max_width: int, 
-        max_height: int, 
+        self,
+        input_folder: Path,
+        output_folder: Path,
+        max_width: int,
+        max_height: int,
         codec: str = "h264",
-        max_concurrent_encodes: int = DEFAULT_MAX_CONCURRENT_ENCODES,
+        encoder: Optional[str] = None,      # Pre-detected encoder; None = auto-detect at runtime
+        quality: int = 18,                  # CQ/CRF value: 18=고화질, 23=균형, 28=용량 절약
+        audio_bitrate: str = "256k",        # AAC audio bitrate: "128k", "192k", "256k"
+        duplicate_handling: str = "skip",   # "skip" | "overwrite" | "rename"
+        max_concurrent_encodes: int = 0,    # 0 = auto (determined by encoder type)
         error_log_lines: int = DEFAULT_GPU_ERROR_LOG_LINES
     ):
         self.input_folder = input_folder
@@ -237,6 +261,10 @@ class VideoConverterConfig:
         self.max_width = max_width
         self.max_height = max_height
         self.codec = codec
+        self.encoder = encoder
+        self.quality = quality
+        self.audio_bitrate = audio_bitrate
+        self.duplicate_handling = duplicate_handling
         self.max_concurrent_encodes = max_concurrent_encodes
         self.error_log_lines = error_log_lines
 
@@ -274,16 +302,18 @@ def _run_encode_pass(
     cancel_flag: threading.Event = None,
     error_log_lines: int = DEFAULT_GPU_ERROR_LOG_LINES,
     worker_context = None,
+    quality: int = 18,
+    audio_bitrate: str = "256k",
 ) -> tuple[int, str]:
     """
     Run a single encoding pass and return (return_code, error_log).
     """
-    enc_args = EncoderConfig.get_encoder_args(encoder)
+    enc_args = EncoderConfig.get_encoder_args(encoder, quality)
     cmd_ffmpeg = [
         ffmpeg_path, "-y", "-i", str(file_path),
         "-map", "0:v:0", "-map", "0:a?", "-vf", scale_filter
     ] + enc_args + [
-        "-c:a", "aac", "-b:a", "256k", 
+        "-c:a", "aac", "-b:a", audio_bitrate,
         "-sn", "-dn",
         "-map_metadata", "0", "-movflags", "use_metadata_tags",
         str(out_path)
@@ -366,19 +396,29 @@ def run_video_conversion(
                 all_files.append(p)
     
     total_files = len(all_files)
-    if progress_cb:
-        progress_cb("Detecting GPU Acceleration...", total_files, total_files, stats.get_all())
-    
+    config.output_folder.mkdir(parents=True, exist_ok=True)
     failed_folder = config.output_folder / "_Failed_Conversions"
-    
-    # Detect best encoder
-    best_encoder = detect_hardware_encoder(ffmpeg_path, config.output_folder, config.codec)
+
+    # Use encoder cached from the setup screen if available; otherwise detect now.
+    if config.encoder:
+        best_encoder = config.encoder
+        logger.info(f"Using pre-detected encoder: {best_encoder}")
+        if progress_cb:
+            progress_cb(f"Using {best_encoder}...", total_files, total_files, stats.get_all())
+    else:
+        if progress_cb:
+            progress_cb("Detecting GPU Acceleration...", total_files, total_files, stats.get_all())
+        best_encoder = detect_hardware_encoder(ffmpeg_path, config.output_folder, config.codec)
     cpu_fallback_encoder = "libx265" if config.codec == "hevc" else "libx264"
     
     # Estimate concurrent encodes based on GPU capability
     estimated_max_concurrent = estimate_concurrent_encodes(best_encoder)
-    max_concurrent = min(config.max_concurrent_encodes, estimated_max_concurrent)
-    logger.info(f"Using {best_encoder}. Max concurrent encodes: {max_concurrent}")
+    if config.max_concurrent_encodes <= 0:
+        # 0 = auto: let encoder type decide
+        max_concurrent = estimated_max_concurrent
+    else:
+        max_concurrent = min(config.max_concurrent_encodes, estimated_max_concurrent)
+    logger.info(f"Using {best_encoder}. Max concurrent encodes: {max_concurrent} (requested={config.max_concurrent_encodes or 'auto'})")
     
     # Notify GUI of max concurrent
     if max_concurrent_cb:
@@ -402,10 +442,21 @@ def run_video_conversion(
         
         # Only convert if resolution exceeds limits
         if w > config.max_width or h > config.max_height:
-            files_to_convert.append((convert_count, file_path, w, h))  # Use convert_count as index
+            # --- Duplicate handling ---
+            tentative_out = config.output_folder / file_path.name
+            if tentative_out.exists():
+                if config.duplicate_handling == "skip":
+                    logger.info(f"Skipping {file_path.name}: output already exists (duplicate skip)")
+                    stats.increment("skipped")
+                    continue
+                elif config.duplicate_handling == "overwrite":
+                    logger.info(f"Overwriting existing output for {file_path.name}")
+                # "rename" falls through — _resolve_output_path will add suffix
+
+            files_to_convert.append((convert_count, file_path, w, h))
             convert_count += 1
         else:
-            logger.info(f"Skipping {file_path.name} (Resolution: {w}x{h})")
+            logger.info(f"Skipping {file_path.name} (Resolution: {w}x{h}, within target)")
             stats.increment("skipped")
     
     if result.cancelled:
@@ -437,11 +488,16 @@ def run_video_conversion(
                 result.cancelled = True
                 break
 
-            out_path = _resolve_output_path(file_path, config.output_folder)
+            # Resolve output path based on duplicate_handling setting
+            if config.duplicate_handling == "overwrite":
+                out_path = config.output_folder / file_path.name
+            else:
+                out_path = _resolve_output_path(file_path, config.output_folder)
+
             scale_filter = f"scale={config.max_width}:{config.max_height}:force_original_aspect_ratio=decrease"
             duration = get_video_duration(ffprobe_path, file_path)
 
-            logger.info(f"[Task {idx+1}/{total_to_convert}] Queuing {file_path.name} for conversion via {best_encoder}")
+            logger.info(f"[Task {idx+1}/{total_to_convert}] Queuing {file_path.name} → {out_path.name} via {best_encoder}")
 
             future = executor.submit(
                 _convert_video_task,
@@ -462,6 +518,8 @@ def run_video_conversion(
                 idx + 1,            # sequential index for logging
                 total_to_convert,
                 slot_queue,         # GUI slot pool
+                config.quality,
+                config.audio_bitrate,
             )
             futures_to_index[future] = (idx + 1, file_path.name)
         
@@ -503,6 +561,8 @@ def _convert_video_task(
     task_number: int,   # sequential index for logging (1-based)
     total_tasks: int,
     slot_queue: Queue,  # GUI slot pool (1..max_concurrent)
+    quality: int = 18,
+    audio_bitrate: str = "256k",
 ) -> None:
     """
     Task function for parallel video conversion.
@@ -523,6 +583,7 @@ def _convert_video_task(
             best_encoder, scale_filter, duration,
             task_progress_cb, gui_slot,
             stats, cancel_flag, error_log_lines, worker_context,
+            quality, audio_bitrate,
         )
 
         if cancel_flag and cancel_flag.is_set():
@@ -543,6 +604,7 @@ def _convert_video_task(
                 cpu_fallback_encoder, scale_filter, duration,
                 task_progress_cb, gui_slot,
                 stats, cancel_flag, error_log_lines, worker_context,
+                quality, audio_bitrate,
             )
 
         # Handle result
