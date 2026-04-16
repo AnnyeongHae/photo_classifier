@@ -201,9 +201,13 @@ def detect_hardware_encoder(ffmpeg_path: str, work_dir: Path, codec: str = "h264
 
     for enc in gpu_encoders:
         test_file = work_dir / f"test_enc_{enc}.mp4"
+        # -pix_fmt yuv420p must be specified explicitly: NVENC refuses to auto-convert
+        # pixel formats and returns EINVAL (-22) without it. Other encoders (QSV, libx264)
+        # are more permissive, which is why they passed the test even without this flag.
+        # 256x256 avoids potential minimum-resolution limits on some encoder implementations.
         base_cmd = [
-            ffmpeg_path, "-y", "-f", "lavfi", "-i", "color=c=black:s=128x128",
-            "-frames:v", "10", "-c:v", enc,
+            ffmpeg_path, "-y", "-f", "lavfi", "-i", "color=c=black:s=256x256",
+            "-frames:v", "1", "-pix_fmt", "yuv420p", "-c:v", enc,
         ]
 
         if enc.endswith("_nvenc"):
@@ -289,6 +293,29 @@ def _resolve_output_path(original_path: Path, output_folder: Path, max_attempts:
     logger.warning(f"Exceeded {max_attempts} attempts to find unique filename for {original_path.name}")
     return output_folder / f"{original_path.stem}_{max_attempts}{original_path.suffix}"
 
+def _get_hwaccel_args(encoder: str) -> list:
+    """Return FFmpeg hardware-accelerated decode arguments for the given encoder.
+
+    Strategy: pair the hardware decoder with its matching encoder to avoid
+    cross-device frame transfers. Frames are decoded on GPU and automatically
+    transferred to system memory before the (CPU) scale filter runs, then the
+    matching GPU encoder picks them up. FFmpeg auto-falls back to software
+    decode if the source codec is not supported by the hardware decoder.
+
+    - NVENC → NVDEC  (-hwaccel cuda)
+    - QSV   → QSV    (-hwaccel qsv)
+    - AMF   → D3D11VA (-hwaccel d3d11va, Windows-only, works with AMD/Intel/NVIDIA)
+    - CPU   → no hwaccel (unnecessary overhead)
+    """
+    if encoder.endswith("_nvenc"):
+        return ["-hwaccel", "cuda"]
+    elif encoder.endswith("_qsv"):
+        return ["-hwaccel", "qsv"]
+    elif encoder.endswith("_amf"):
+        return ["-hwaccel", "d3d11va"]
+    return []
+
+
 def _run_encode_pass(
     ffmpeg_path: str,
     file_path: Path,
@@ -309,9 +336,12 @@ def _run_encode_pass(
     Run a single encoding pass and return (return_code, error_log).
     """
     enc_args = EncoderConfig.get_encoder_args(encoder, quality)
+    hwaccel_args = _get_hwaccel_args(encoder)
     cmd_ffmpeg = [
-        ffmpeg_path, "-y", "-i", str(file_path),
-        "-map", "0:v:0", "-map", "0:a?", "-vf", scale_filter
+        ffmpeg_path, "-y",
+    ] + hwaccel_args + [
+        "-i", str(file_path),
+        "-map", "0:v:0", "-map", "0:a?", "-vf", scale_filter,
     ] + enc_args + [
         "-c:a", "aac", "-b:a", audio_bitrate,
         "-sn", "-dn",
