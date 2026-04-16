@@ -12,7 +12,7 @@ try:
         QLabel, QPushButton, QSizePolicy
     )
     from PySide6.QtGui import QPixmap, QImage, QFont
-    from PySide6.QtCore import Qt, QSize
+    from PySide6.QtCore import Qt, QSize, Signal
     PYSIDE_AVAILABLE = True
 except ImportError:
     PYSIDE_AVAILABLE = False
@@ -20,19 +20,23 @@ except ImportError:
 
 class FrameLabel(QLabel):
     """Clickable label for displaying frame with selection feedback."""
-    
-    def __init__(self, frame_rgb: np.ndarray, label_text: str, parent=None):
+
+    frame_clicked = Signal(int)  # emits frame index on click
+
+    def __init__(self, frame_rgb: np.ndarray, label_text: str, frame_index: int = 0, parent=None):
         """
         Initialize frame label.
-        
+
         Args:
             frame_rgb: RGB numpy array (H, W, 3)
             label_text: Description text (e.g., "Sharpest Frame")
+            frame_index: Index of this frame in the candidate list
             parent: Parent widget
         """
         super().__init__(parent)
         self.frame_rgb = frame_rgb
         self.label_text = label_text
+        self.frame_index = frame_index
         self.is_selected = False
         self._setup_ui()
     
@@ -70,6 +74,7 @@ class FrameLabel(QLabel):
     def mousePressEvent(self, event):
         """Handle mouse click for selection."""
         if event.button() == Qt.LeftButton:
+            self.frame_clicked.emit(self.frame_index)
             self.select()
     
     def select(self):
@@ -160,7 +165,7 @@ class ThumbnailSelector:
             frame_layout.addWidget(info_label)
             
             # Frame image
-            frame_label = FrameLabel(frame_rgb, label_text)
+            frame_label = FrameLabel(frame_rgb, label_text, frame_index=i)
             frame_labels.append(frame_label)
             frame_layout.addWidget(frame_label)
             
@@ -182,12 +187,9 @@ class ThumbnailSelector:
             frame_label_obj.select()
             selected_idx[0] = idx
         
-        # Connect click events
-        for i, fl in enumerate(frame_labels):
-            fl.mousePressEvent = lambda event, idx=i: (
-                on_frame_selected(frame_labels[idx], idx),
-                fl.mousePressEvent(event) if hasattr(fl, 'original_mousePressEvent') else None
-            )
+        # Connect click events via Qt signal (safe, no monkey-patching)
+        for fl in frame_labels:
+            fl.frame_clicked.connect(lambda idx: on_frame_selected(frame_labels[idx], idx))
         
         # Buttons
         ok_button = QPushButton("OK")

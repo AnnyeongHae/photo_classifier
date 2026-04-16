@@ -27,53 +27,43 @@ class ImageConverter:
         self,
         frame_rgb: np.ndarray,
         output_path: Union[str, Path],
-        create_dirs: bool = True,
-        optimize: bool = False
+        create_dirs: bool = True
     ) -> Path:
         """
         Save an RGB frame as JPEG.
-        
+
         Args:
             frame_rgb: RGB numpy array (H, W, 3) with values 0-255
             output_path: Destination JPEG file path
             create_dirs: If True, create parent directories if they don't exist
-            optimize: If False (default), save with maximum quality. If True, optimize file size.
-            
+
         Returns:
             Path to saved file
-            
+
         Raises:
             ValueError: If frame format is invalid
+            RuntimeError: If saving fails
         """
         output_path = Path(output_path)
-        
+
         if len(frame_rgb.shape) != 3 or frame_rgb.shape[2] != 3:
             raise ValueError(f"Expected RGB frame (H, W, 3), got shape {frame_rgb.shape}")
-        
+
         if create_dirs:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Convert RGB to BGR for OpenCV
         frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-        
-        # Determine quality based on optimization flag
-        if optimize:
-            quality = self.jpeg_quality  # Use configured quality (default 95)
-        else:
-            # Maximum quality mode - save without quality limit
-            # Use optimize_quality approach for best results
-            quality = min(98, self.jpeg_quality)  # 98 is near-lossless
-        
-        # Save with specified quality
+
         success = cv2.imwrite(
             str(output_path),
             frame_bgr,
-            [cv2.IMWRITE_JPEG_QUALITY, quality]
+            [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality]
         )
-        
+
         if not success:
             raise RuntimeError(f"Failed to save JPEG: {output_path}")
-        
+
         return output_path
     
     def save_frame_as_png(

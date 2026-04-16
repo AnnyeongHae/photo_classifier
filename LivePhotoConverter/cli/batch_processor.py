@@ -62,11 +62,19 @@ class BatchProcessor:
         """Setup logging configuration."""
         fmt = "%(asctime)s [%(levelname)s] %(message)s"
         datefmt = "%Y-%m-%d %H:%M:%S"
-        
+        formatter = logging.Formatter(fmt, datefmt)
+
+        # Always attach a console handler so programmatic use gets output too
+        if not logger.handlers:
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            logger.addHandler(console_handler)
+            logger.setLevel(logging.INFO)
+
         if log_file:
-            handler = logging.FileHandler(log_file)
-            handler.setFormatter(logging.Formatter(fmt, datefmt))
-            logger.addHandler(handler)
+            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
     
     def process_folder(
         self,
@@ -98,12 +106,18 @@ class BatchProcessor:
         
         if patterns is None:
             patterns = ["*.mov", "*.mp4", "*.MP4", "*.MOV"]
-        
-        # Collect files
+
+        # Collect files, deduplicate by resolved path (Windows glob is case-insensitive
+        # so *.mov and *.MOV return the same files on NTFS)
+        seen = set()
         video_files = []
         for pattern in patterns:
-            video_files.extend(input_folder.glob(f"**/{pattern}"))
-        
+            for f in input_folder.glob(f"**/{pattern}"):
+                resolved = f.resolve()
+                if resolved not in seen:
+                    seen.add(resolved)
+                    video_files.append(f)
+
         if not video_files:
             logger.warning(f"No video files found matching patterns: {patterns}")
             return {"processed": 0, "skipped": 0, "failed": 0}

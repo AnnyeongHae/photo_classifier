@@ -78,23 +78,45 @@ class FrameExtractor:
                 raise RuntimeError("Failed to extract middle frame")
             middle_frame_rgb = cv2.cvtColor(middle_frame, cv2.COLOR_BGR2RGB)
             
-            # Find sharpest frame by scanning all frames
-            sharpest_frame_bgr = None
-            sharpest_idx = 0
-            sharpest_score = -1
-            
+            # Find sharpest frame using two-pass sampling:
+            # Pass 1 — sample every N frames (fast coarse scan)
+            # Pass 2 — search ±window around the best candidate (fine refinement)
+            sample_step = max(1, total_frames // 30)  # at most 30 sample points
+            coarse_best_idx = 0
+            coarse_best_score = -1.0
+
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            for i in range(total_frames):
+            i = 0
+            while i < total_frames:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, i)
                 ret, frame = cap.read()
                 if not ret:
                     break
-                
+                score = self.focus_detector.compute_sharpness(frame, use_ensemble=self.use_ensemble)
+                if score > coarse_best_score:
+                    coarse_best_score = score
+                    coarse_best_idx = i
+                i += sample_step
+
+            # Pass 2 — refine within ±sample_step of the coarse winner
+            refine_start = max(0, coarse_best_idx - sample_step)
+            refine_end = min(total_frames, coarse_best_idx + sample_step + 1)
+
+            sharpest_frame_bgr = None
+            sharpest_idx = coarse_best_idx
+            sharpest_score = -1.0
+
+            cap.set(cv2.CAP_PROP_POS_FRAMES, refine_start)
+            for i in range(refine_start, refine_end):
+                ret, frame = cap.read()
+                if not ret:
+                    break
                 score = self.focus_detector.compute_sharpness(frame, use_ensemble=self.use_ensemble)
                 if score > sharpest_score:
                     sharpest_score = score
-                    sharpest_frame_bgr = frame
+                    sharpest_frame_bgr = frame.copy()
                     sharpest_idx = i
-            
+
             if sharpest_frame_bgr is None:
                 raise RuntimeError("Failed to find sharpest frame")
             

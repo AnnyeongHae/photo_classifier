@@ -29,35 +29,32 @@ class MetadataHandler:
         if exiftool_path:
             self.exiftool_path = exiftool_path
         else:
-            # Try multiple locations
-            candidates = [
-                "exiftool",  # In PATH
-                shutil.which("exiftool"),  # System PATH
-            ]
-            
-            # Add project-local exiftool (Windows)
-            from pathlib import Path
-            project_root = Path(__file__).parent.parent.parent
-            # Try both possible locations (direct and nested)
-            project_exiftool_paths = [
-                project_root / "exiftool-13.55_64" / "exiftool-13.55_64" / "exiftool.exe",
-                project_root / "exiftool-13.55_64" / "exiftool.exe",
-            ]
-            for exiftool_candidate in project_exiftool_paths:
-                if exiftool_candidate.exists():
-                    candidates.insert(0, str(exiftool_candidate))
-                    break
-            
-            self.exiftool_path = None
-            for candidate in candidates:
-                if candidate and Path(candidate).exists():
-                    self.exiftool_path = str(candidate)
-                    break
-        
+            self.exiftool_path = self._find_exiftool()
+
         if not self.exiftool_path:
             raise FileNotFoundError(
                 "exiftool not found. Install it or provide path via exiftool_path parameter."
             )
+
+    @staticmethod
+    def _find_exiftool() -> Optional[str]:
+        """Search for exiftool in system PATH and common project-local locations."""
+        # System PATH (most reliable — returns absolute path or None)
+        found = shutil.which("exiftool")
+        if found:
+            return found
+
+        # Project-local Windows installations (any version under the project root)
+        project_root = Path(__file__).parent.parent.parent
+        for candidate in sorted(project_root.glob("exiftool*/exiftool.exe")):
+            if candidate.exists():
+                return str(candidate)
+        # Nested layout: exiftool-X/exiftool-X/exiftool.exe
+        for candidate in sorted(project_root.glob("exiftool*/*/exiftool.exe")):
+            if candidate.exists():
+                return str(candidate)
+
+        return None
     
     def extract_metadata(self, video_path: str | Path) -> Dict[str, Any]:
         """
