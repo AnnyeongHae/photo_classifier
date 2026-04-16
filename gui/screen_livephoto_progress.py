@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame, QGroupBox, QHBoxLayout, QLabel, QMessageBox,
-    QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 _GROUPBOX_STYLE = """
@@ -142,6 +143,27 @@ class LivePhotoProgressScreen(QWidget):
             stats_layout.addWidget(card)
         root.addWidget(stats_group)
 
+        # ── 처리 로그 ─────────────────────────────────────────────────────
+        log_group = QGroupBox("  처리 로그")
+        log_group.setStyleSheet(_GROUPBOX_STYLE)
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(20, 12, 20, 16)
+
+        self._log_view = QPlainTextEdit()
+        self._log_view.setReadOnly(True)
+        self._log_view.setFixedHeight(220)
+        mono = QFont("Consolas", 11)
+        mono.setStyleHint(QFont.Monospace)
+        self._log_view.setFont(mono)
+        self._log_view.setStyleSheet(
+            "QPlainTextEdit {"
+            "  background: #1e1e2e; color: #cdd6f4;"
+            "  border: none; border-radius: 6px; padding: 8px;"
+            "}"
+        )
+        log_layout.addWidget(self._log_view)
+        root.addWidget(log_group)
+
         root.addStretch()
 
         # ── 고정 하단: 취소 버튼 ──────────────────────────────────────────
@@ -173,7 +195,15 @@ class LivePhotoProgressScreen(QWidget):
         self._card_success.set_value(0)
         self._card_skip.set_value(0)
         self._card_fail.set_value(0)
+        self._log_view.clear()
         self._cancel_btn.setEnabled(True)
+
+    @Slot(str)
+    def append_log(self, line: str) -> None:
+        self._log_view.appendPlainText(line)
+        self._log_view.verticalScrollBar().setValue(
+            self._log_view.verticalScrollBar().maximum()
+        )
 
     @Slot(str, int, int)
     def on_progress(self, step_label: str, done: int, total: int) -> None:

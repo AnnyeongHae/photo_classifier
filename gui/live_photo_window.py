@@ -64,6 +64,7 @@ class LivePhotoWindow(QMainWindow):
         self._worker = LivePhotoWorker(config=config, parent=self)
         self._worker.progress.connect(self._on_progress)
         self._worker.stats_updated.connect(self._on_stats_updated)
+        self._worker.log.connect(self._progress_screen.append_log)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.start()

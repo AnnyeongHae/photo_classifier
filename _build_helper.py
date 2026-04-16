@@ -115,11 +115,13 @@ def step_nuitka() -> int:
         # --include-data-dir for everything Nuitka can handle automatically.
         # .exe / .dll and paths with spaces are handled in step_copy_assets.
         f"--include-data-dir={ASSETS_DIR}=assets",
-        "--include-package=shapefile",
         "--include-package=core",
         "--include-package=gui",
         "--include-package=workers",
-        "--include-package=LivePhotoConverter",
+        # LivePhotoConverter is NOT force-included here.
+        # Nuitka resolves it automatically via explicit imports in
+        # workers/live_photo_worker.py. Force-including the whole package
+        # would also pull in setup.py → setuptools, bloating the build.
         "--windows-console-mode=disable",
         f"--output-dir={DIST_DIR}",
         "--output-filename=PhotoClassifier.exe",

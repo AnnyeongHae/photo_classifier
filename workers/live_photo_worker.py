@@ -35,9 +35,10 @@ class LivePhotoWorker(QThread):
     (not BatchProcessor) so logging doesn't conflict with the main app.
     """
 
-    progress = Signal(str, int, int)   # step_label, done, total
-    stats_updated = Signal(int, int, int)  # processed, skipped, failed
-    finished = Signal(object)          # LivePhotoResult
+    progress = Signal(str, int, int)      # step_label, done, total
+    stats_updated = Signal(int, int, int) # processed, skipped, failed
+    log = Signal(str)                     # one log line (plain text)
+    finished = Signal(object)             # LivePhotoResult
     error = Signal(str)
 
     def __init__(self, config: LivePhotoConfig, parent=None):
@@ -73,9 +74,12 @@ class LivePhotoWorker(QThread):
         if cfg.preserve_metadata:
             try:
                 metadata_handler = MetadataHandler(cfg.exiftool_path or None)
+                self.log.emit("[INFO] exiftool 탐지됨 — EXIF 보전 활성화")
             except FileNotFoundError:
-                # exiftool not found — continue without metadata
+                self.log.emit("[WARN] exiftool 미탐지 — 메타데이터 없이 저장")
                 metadata_handler = None
+        else:
+            self.log.emit("[INFO] 메타데이터 보전 비활성화")
 
         # Collect video files
         patterns = ["*.mov", "*.mp4", "*.MP4", "*.MOV"]
@@ -90,27 +94,27 @@ class LivePhotoWorker(QThread):
 
         total = len(video_files)
         if total == 0:
+            self.log.emit("[WARN] 처리할 파일이 없습니다.")
             self.progress.emit("파일 없음", 0, 0)
             return result
 
+        self.log.emit(f"[INFO] 총 {total}개 파일 발견")
         cfg.output_folder.mkdir(parents=True, exist_ok=True)
         file_ext = ".png" if cfg.output_format == "png" else ".jpg"
 
         for i, video_file in enumerate(video_files, 1):
             if self._cancel_flag.is_set():
                 result.cancelled = True
+                self.log.emit("[INFO] 사용자 취소 요청")
                 break
 
-            self.progress.emit(
-                f"처리 중: {video_file.name}",
-                i - 1,
-                total,
-            )
+            self.progress.emit(f"처리 중: {video_file.name}", i - 1, total)
 
             output_file = cfg.output_folder / f"{video_file.stem}{file_ext}"
 
             if output_file.exists() and cfg.skip_existing:
                 result.skipped += 1
+                self.log.emit(f"[SKIP] [{i}/{total}] {video_file.name}")
                 self.stats_updated.emit(result.processed, result.skipped, result.failed)
                 continue
 
@@ -123,13 +127,18 @@ class LivePhotoWorker(QThread):
                     metadata_handler,
                 )
                 result.processed += 1
+                self.log.emit(f"[ OK ] [{i}/{total}] {video_file.name} → {output_file.name}")
             except Exception as exc:  # noqa: BLE001
                 result.failed += 1
                 result.errors.append(f"{video_file.name}: {exc}")
+                self.log.emit(f"[FAIL] [{i}/{total}] {video_file.name}: {exc}")
 
             self.stats_updated.emit(result.processed, result.skipped, result.failed)
 
         self.progress.emit("완료", total, total)
+        self.log.emit(
+            f"[INFO] 완료 — 변환 {result.processed} / 건너뜀 {result.skipped} / 실패 {result.failed}"
+        )
         return result
 
     def _convert_single(
