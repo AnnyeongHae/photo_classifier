@@ -108,6 +108,9 @@ def step_check_assets() -> bool:
 
 def step_nuitka() -> int:
     """[2/4] Run Nuitka standalone build."""
+    # Use all available CPU cores for C compilation; cap at 16 to avoid RAM pressure.
+    jobs = min(os.cpu_count() or 4, 16)
+
     cmd = [
         sys.executable, "-m", "nuitka",
         "--standalone",
@@ -115,17 +118,27 @@ def step_nuitka() -> int:
         # --include-data-dir for everything Nuitka can handle automatically.
         # .exe / .dll and paths with spaces are handled in step_copy_assets.
         f"--include-data-dir={ASSETS_DIR}=assets",
+        # Local app packages: force-include so Nuitka compiles all submodules
+        # even if some are only referenced via getattr / importlib patterns.
         "--include-package=core",
         "--include-package=gui",
         "--include-package=workers",
-        # LivePhotoConverter is NOT force-included here.
-        # Nuitka resolves it automatically via explicit imports in
-        # workers/live_photo_worker.py. Force-including the whole package
-        # would also pull in setup.py → setuptools, bloating the build.
+        # shapefile (pyshp): top-level `import shapefile` in core/mvp.py is
+        # traced automatically by Nuitka — no force-include needed.
+        #
+        # LivePhotoConverter: same reason — explicit imports in
+        # workers/live_photo_worker.py let Nuitka resolve it automatically.
+        # Force-including would pull in setup.py → setuptools → ~344 extra files.
+        #
+        # Prevent accidental re-introduction of setuptools / test frameworks.
+        "--noinclude-setuptools-mode=nofollow",
+        "--noinclude-pytest-mode=nofollow",
+        # Strip docstrings to reduce output size and speed up bytecode compile.
+        "--python-flag=no_docstrings",
         "--windows-console-mode=disable",
         f"--output-dir={DIST_DIR}",
         "--output-filename=PhotoClassifier.exe",
-        "--jobs=4",
+        f"--jobs={jobs}",
         str(PROJECT_DIR / "app.py"),
     ]
     print("[2/4] Running Nuitka standalone build...")

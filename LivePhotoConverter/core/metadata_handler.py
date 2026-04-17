@@ -128,26 +128,35 @@ class MetadataHandler:
             return False
         
         try:
-            # Copy only image-compatible metadata groups.
-            # "-all:all>all:all" is intentionally avoided here: it also tries to
-            # copy video-only atoms (QuickTime track data, etc.) which cannot map
-            # to JPEG/PNG EXIF and cause exiftool warnings/failures.
+            # ── Strategy ─────────────────────────────────────────────────────
+            # "-all:all>all:all" copies every metadata group exiftool can map
+            # from the MOV to the image file.  Video-only QuickTime atoms that
+            # have no JPEG/PNG equivalent are silently skipped — exiftool still
+            # exits 0, so this is safe.
+            #
+            # iPhone GPS gap: Keys:GPSCoordinates is an Apple composite string
+            # ("lat,lon,alt/") that -all:all>all:all cannot split into standard
+            # EXIF GPS tags.  Composite:GPS* tags are synthesised by exiftool
+            # from ANY GPS source in the video (Keys, QuickTime atoms, EXIF-IFD)
+            # and CAN be written to EXIF GPS in the destination.
+            # Listing Composite copies AFTER -all:all>all:all means they win
+            # if non-empty — acting as the authoritative GPS value regardless of
+            # which namespace held the coordinates in the source.
             cmd = [
                 self.exiftool_path,
                 "-overwrite_original",
                 "-TagsFromFile", str(source_video),
-                "-EXIF:All",   # camera settings, datetime, orientation …
-                "-GPS:All",    # GPS coordinates & altitude
-                "-IPTC:All",   # copyright, keywords
-                "-XMP:All",    # ratings, labels, extended metadata
-                # iPhone Live Photos store creation date in QuickTime Keys;
-                # copy to DateTimeOriginal only when EXIF field is absent (<)
-                "-DateTimeOriginal<QuickTime:ContentCreateDate",
-                "-DateTimeOriginal<QuickTime:CreateDate",
+                # Comprehensive copy — all groups, all tags
+                "-all:all>all:all",
+                # GPS: synthesise from whichever namespace the video used
+                "-GPSLatitude<Composite:GPSLatitude",
+                "-GPSLongitude<Composite:GPSLongitude",
+                "-GPSAltitude<Composite:GPSAltitude",
+                "-GPSLatitudeRef<Composite:GPSLatitudeRef",
+                "-GPSLongitudeRef<Composite:GPSLongitudeRef",
             ]
 
-            # Add caller-supplied tag overrides (appended after TagsFromFile block,
-            # before the target path, so they take precedence)
+            # Caller-supplied overrides — appended last so they take precedence
             if overwrite_tags:
                 for tag, value in overwrite_tags.items():
                     cmd.append(f"-{tag}={value}")

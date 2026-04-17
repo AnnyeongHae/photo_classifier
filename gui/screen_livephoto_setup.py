@@ -164,20 +164,24 @@ class LivePhotoSetupScreen(QWidget):
         out_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
 
         self._format_cb = QComboBox()
-        self._format_cb.addItem("PNG  — 무손실 (권장, 파일 큼)", "png")
-        self._format_cb.addItem("JPEG — 손실 압축 (파일 작음)", "jpg")
+        self._format_cb.addItem("JPEG — EXIF 완전 호환 · 고화질 (권장)", "jpg")
+        self._format_cb.addItem("PNG  — 무손실 · EXIF 호환성 제한", "png")
         self._format_cb.setStyleSheet(_COMBO_STYLE)
         self._format_cb.currentIndexChanged.connect(self._on_format_changed)
         out_layout.addRow(_flabel("이미지 포맷"), self._format_cb)
         out_layout.addRow(
             "",
-            _hint("PNG는 픽셀 완전 보존. JPEG는 압축률로 인해 원본 대비 손실이 발생합니다."),
+            _hint(
+                "JPEG(권장): Live Photo 프레임은 이미 H.264 손실 압축 — Quality 95로 충분하며 "
+                "GPS·카메라 설정 EXIF가 모든 앱에서 정상 인식됩니다. "
+                "PNG: 픽셀 완전 보존이나 EXIF(특히 GPS) 호환 뷰어가 제한적입니다."
+            ),
         )
 
         self._quality_cb = QComboBox()
-        self._quality_cb.addItem("100  — 최고 화질 (거의 무손실)", 100)
-        self._quality_cb.addItem("95   — 고화질 (기본값)", 95)
-        self._quality_cb.addItem("85   — 균형", 85)
+        self._quality_cb.addItem("95   — 고화질 (권장)", 95)
+        self._quality_cb.addItem("100  — 최고 화질 (파일 큼)", 100)
+        self._quality_cb.addItem("85   — 균형 (파일 작음)", 85)
         self._quality_cb.setStyleSheet(_COMBO_STYLE)
         self._quality_row_label = _flabel("JPEG 품질")
         out_layout.addRow(self._quality_row_label, self._quality_cb)

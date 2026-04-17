@@ -11,7 +11,7 @@ from PySide6.QtCore import QThread, Signal
 class LivePhotoConfig:
     input_folder: Path
     output_folder: Path
-    output_format: str = "png"       # "png" or "jpg"
+    output_format: str = "jpg"       # "png" or "jpg"
     jpeg_quality: int = 95
     frame_mode: str = "sharpest"     # "sharpest" | "first" | "middle"
     preserve_metadata: bool = True
