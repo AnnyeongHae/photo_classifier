@@ -42,8 +42,11 @@ def copy_metadata_exiftool(
         "-unsafe",
         str(dst),
     ]
+    extra: dict = {}
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        extra["creationflags"] = subprocess.CREATE_NO_WINDOW
     try:
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, timeout=30, **extra)
         if result.returncode != 0:
             log.debug("exiftool stderr: %s", result.stderr.decode(errors="replace"))
         return result.returncode == 0
