@@ -146,14 +146,47 @@ class MetadataHandler:
                 self.exiftool_path,
                 "-overwrite_original",
                 "-TagsFromFile", str(source_video),
-                # Comprehensive copy — all groups, all tags
+
+                # ── 1. Comprehensive copy ─────────────────────────────────
+                # Handles: EXIF-IFD embedded in MOV/MP4 (Samsung, Sony, Nikon,
+                # Canon, GoPro, DJI), XMP (DJI, GoPro), IPTC, standard QuickTime
+                # GPS atoms.  Video-only atoms (track duration, etc.) are silently
+                # skipped — exiftool still exits 0.
                 "-all:all>all:all",
-                # GPS: synthesise from whichever namespace the video used
+
+                # ── 2. Datetime cross-namespace (ascending priority) ───────
+                # For cameras that store timestamps only in QuickTime atoms
+                # (no EXIF-IFD in the video): older Android, DJI, GoPro, etc.
+                # Each line overrides the previous if its source is non-empty;
+                # Keys:CreationDate (last = highest) carries timezone — iPhone.
+                "-DateTimeOriginal<QuickTime:CreateDate",
+                "-DateTimeOriginal<QuickTime:ContentCreateDate",
+                "-DateTimeOriginal<Keys:CreationDate",
+                "-CreateDate<QuickTime:CreateDate",
+                "-CreateDate<Keys:CreationDate",
+
+                # ── 3. Make / Model cross-namespace ──────────────────────
+                # Fallback for cameras whose Make/Model lives in QuickTime atoms
+                # rather than EXIF-IFD (some older Android, GoPro, DJI).
+                # Keys:Make/Model (last) wins for iPhone.
+                "-Make<QuickTime:Make",
+                "-Model<QuickTime:Model",
+                "-Make<Keys:Make",
+                "-Model<Keys:Model",
+
+                # ── 4. GPS synthesis — highest priority ──────────────────
+                # Composite:GPS* is synthesised by exiftool from any GPS source
+                # present in the video:
+                #   • Keys:GPSCoordinates  ("lat,lon,alt/")  — iPhone
+                #   • QuickTime GPS atoms                     — GoPro, DJI, Sony
+                #   • EXIF-IFD GPS tags                      — Samsung, Canon, Nikon
+                # Writing Composite:GPSLatitude (signed decimal) to EXIF:GPSLatitude
+                # causes exiftool to automatically set GPSLatitudeRef (N/S) —
+                # explicit Composite:GPSLatitudeRef/LongitudeRef are not valid
+                # Composite tags and must NOT be referenced.
                 "-GPSLatitude<Composite:GPSLatitude",
                 "-GPSLongitude<Composite:GPSLongitude",
                 "-GPSAltitude<Composite:GPSAltitude",
-                "-GPSLatitudeRef<Composite:GPSLatitudeRef",
-                "-GPSLongitudeRef<Composite:GPSLongitudeRef",
             ]
 
             # Caller-supplied overrides — appended last so they take precedence
