@@ -14,13 +14,6 @@ setlocal
 
 cd /d "%~dp0"
 
-pip install -r requirements-build.txt --quiet
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] pip install failed. Check requirements-build.txt.
-    endlocal
-    exit /b 1
-)
-
 python _build_helper.py
 set BUILD_RC=%ERRORLEVEL%
 

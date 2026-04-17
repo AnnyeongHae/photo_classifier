@@ -156,12 +156,14 @@ class LivePhotoWorker(QThread):
         )
 
         # Pick frame according to user choice
+        if not frames:
+            raise RuntimeError("No frames extracted from video")
         if cfg.frame_mode == "first":
             frame_rgb = frames[0]
         elif cfg.frame_mode == "middle":
-            frame_rgb = frames[1]
+            frame_rgb = frames[min(1, len(frames) - 1)]
         else:  # "sharpest" (default)
-            frame_rgb = frames[2]
+            frame_rgb = frames[min(2, len(frames) - 1)]
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
