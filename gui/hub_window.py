@@ -6,18 +6,20 @@ from PySide6.QtWidgets import (
 from gui.main_window import MainWindow
 from gui.video_window import VideoWindow
 from gui.live_photo_window import LivePhotoWindow
+from gui.image_editor_window import ImageEditorWindow
 
 class HubWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Media Pipeline Hub")
-        self.setMinimumSize(1020, 500)
-        self.resize(1080, 560)
+        self.setMinimumSize(1340, 500)
+        self.resize(1400, 560)
 
         # Store child windows to keep them alive
         self._classifier_window = None
         self._video_window = None
         self._live_photo_window = None
+        self._image_editor_window = None
         
         self._build_ui()
 
@@ -115,11 +117,35 @@ class HubWindow(QMainWindow):
         live_layout.addWidget(live_desc)
         live_layout.setAlignment(Qt.AlignCenter)
 
+        # Image Editor Button
+        btn_editor = QPushButton()
+        btn_editor.setFixedSize(300, 220)
+        btn_editor.setStyleSheet(self._button_style("#d97706", "#b45309"))
+        btn_editor.setCursor(Qt.PointingHandCursor)
+
+        ed_layout = QVBoxLayout(btn_editor)
+        ed_icon = QLabel("🖼️")
+        ed_icon.setAlignment(Qt.AlignCenter)
+        ed_icon.setStyleSheet("font-size: 48px; background: transparent; border: none;")
+        ed_title = QLabel("이미지\n일괄 편집기")
+        ed_title.setAlignment(Qt.AlignCenter)
+        ed_title.setStyleSheet("font-size: 20px; font-weight: bold; color: white; background: transparent; border: none;")
+        ed_desc = QLabel("모든 포맷(RAW·HEIC 포함) 일괄 크기 조절·자르기 및 EXIF 보전.")
+        ed_desc.setAlignment(Qt.AlignCenter)
+        ed_desc.setWordWrap(True)
+        ed_desc.setStyleSheet("font-size: 13px; color: #fde68a; background: transparent; border: none; padding: 0 10px;")
+
+        ed_layout.addWidget(ed_icon)
+        ed_layout.addWidget(ed_title)
+        ed_layout.addWidget(ed_desc)
+        ed_layout.setAlignment(Qt.AlignCenter)
+
         # Add to layout
         buttons_layout.addStretch()
         buttons_layout.addWidget(btn_classifier)
         buttons_layout.addWidget(btn_video)
         buttons_layout.addWidget(btn_live)
+        buttons_layout.addWidget(btn_editor)
         buttons_layout.addStretch()
 
         root.addLayout(buttons_layout)
@@ -129,6 +155,7 @@ class HubWindow(QMainWindow):
         btn_classifier.clicked.connect(self._open_classifier)
         btn_video.clicked.connect(self._open_converter)
         btn_live.clicked.connect(self._open_live_photo)
+        btn_editor.clicked.connect(self._open_image_editor)
 
     def _button_style(self, bg_color: str, hover_color: str) -> str:
         return f"""
@@ -164,3 +191,9 @@ class HubWindow(QMainWindow):
         if not self._live_photo_window:
             self._live_photo_window = LivePhotoWindow(on_back_to_hub=self.show)
         self._live_photo_window.show()
+
+    def _open_image_editor(self) -> None:
+        self.hide()
+        if not self._image_editor_window:
+            self._image_editor_window = ImageEditorWindow(on_back_to_hub=self.show)
+        self._image_editor_window.show()

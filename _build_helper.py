@@ -175,10 +175,12 @@ def step_nuitka() -> int:
         "--include-package=core",
         "--include-package=gui",
         "--include-package=workers",
+        "--include-package=ImageEditor",
         # shapefile: auto-traced via `import shapefile` in core/mvp.py.
         # LivePhotoConverter: auto-traced via explicit imports in live_photo_worker.py.
-        # Neither needs --include-package; force-including LivePhotoConverter
-        # would pull in setup.py → setuptools → ~344 extra compiled files.
+        # ImageEditor: force-included because rawpy/pillow-heif are optional imports
+        # that Nuitka's static tracer may miss when the import is inside try/except.
+        # Neither shapefile nor LivePhotoConverter needs --include-package.
         "--noinclude-setuptools-mode=nofollow",
         "--noinclude-pytest-mode=nofollow",
 
