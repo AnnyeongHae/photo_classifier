@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ImageEditor.core.image_loader import get_image_files, load_image
+from ImageEditor.core.image_loader import load_image
 from ImageEditor.core.transform_pipeline import (
     CropMode, CropTransform, ResizeMode, ResizeTransform,
     RotateTransform, TransformPipeline,
@@ -117,10 +117,12 @@ class PreviewCanvas(QWidget):
         x2 = max(self._drag_start.x(), self._drag_end.x())
         y2 = max(self._drag_start.y(), self._drag_end.y())
 
-        x1 = max(ir.left(),   x1)
-        y1 = max(ir.top(),    y1)
-        x2 = min(ir.right(),  x2)
-        y2 = min(ir.bottom(), y2)
+        ir_right  = ir.x() + ir.width()
+        ir_bottom = ir.y() + ir.height()
+        x1 = max(ir.left(),  x1)
+        y1 = max(ir.top(),   y1)
+        x2 = min(ir_right,   x2)
+        y2 = min(ir_bottom,  y2)
 
         if x2 <= x1 or y2 <= y1:
             return None
@@ -191,10 +193,12 @@ class PreviewCanvas(QWidget):
         x2 = max(self._drag_start.x(), self._drag_end.x())
         y2 = max(self._drag_start.y(), self._drag_end.y())
 
-        x1 = max(ir.left(),   x1)
-        y1 = max(ir.top(),    y1)
-        x2 = min(ir.right(),  x2)
-        y2 = min(ir.bottom(), y2)
+        ir_right  = ir.x() + ir.width()
+        ir_bottom = ir.y() + ir.height()
+        x1 = max(ir.left(), x1)
+        y1 = max(ir.top(),  y1)
+        x2 = min(ir_right,  x2)
+        y2 = min(ir_bottom, y2)
 
         cw, ch = x2 - x1, y2 - y1
         if cw <= 0 or ch <= 0:
@@ -202,10 +206,10 @@ class PreviewCanvas(QWidget):
 
         # Darken outside the crop rect
         overlay = QColor(0, 0, 0, 120)
-        painter.fillRect(ir.left(), ir.top(),    ir.width(),       y1 - ir.top(),    overlay)
-        painter.fillRect(ir.left(), y2,           ir.width(),       ir.bottom() - y2, overlay)
-        painter.fillRect(ir.left(), y1,           x1 - ir.left(),   ch,               overlay)
-        painter.fillRect(x2,        y1,           ir.right() - x2,  ch,               overlay)
+        painter.fillRect(ir.left(), ir.top(),  ir.width(),        y1 - ir.top(),    overlay)
+        painter.fillRect(ir.left(), y2,         ir.width(),        ir_bottom - y2,   overlay)
+        painter.fillRect(ir.left(), y1,         x1 - ir.left(),   ch,               overlay)
+        painter.fillRect(x2,        y1,         ir_right - x2,    ch,               overlay)
 
         # Amber dashed border
         pen = QPen(QColor("#d97706"))
@@ -800,8 +804,12 @@ class ImageEditorPipelineScreen(QWidget):
 
     # ── public API ────────────────────────────────────────────────────────────
 
-    def load_files(self, input_folder: Path) -> None:
-        self._files = get_image_files(input_folder)
+    def load_files(self, files: List[Path]) -> None:
+        self._files = list(files)
+        self._pipeline = TransformPipeline()
+        self._current_file = None
+        self._original_img = None
+        self._cancel_crop()
         self._file_list.clear()
         for f in self._files:
             item = QListWidgetItem(f.name)
@@ -809,6 +817,8 @@ class ImageEditorPipelineScreen(QWidget):
             self._file_list.addItem(item)
         count = len(self._files)
         self._file_count_lbl.setText(f"총 {count}개 파일" if count else "지원 이미지 없음")
+        self._canvas.set_pixmap(None)
+        self._update_pipeline_ui()
         if self._files:
             self._file_list.setCurrentRow(0)
 

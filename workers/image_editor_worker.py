@@ -20,9 +20,10 @@ class OutputFormat:
 
 @dataclass
 class ImageEditorConfig:
-    input_folder:      Path
     output_folder:     Path
     pipeline:          TransformPipeline
+    input_folder:      Optional[Path]       = None   # used when files is None
+    files:             Optional[List[Path]] = None   # explicit file list takes priority
     output_format:     str  = OutputFormat.JPEG
     jpeg_quality:      int  = 92
     preserve_metadata: bool = True
@@ -84,7 +85,12 @@ class ImageEditorWorker(QThread):
             else:
                 self.log.emit("[WARN] exiftool 미탐지 — Pillow EXIF 임베딩으로 폴백 (JPEG만)")
 
-        files = get_image_files(cfg.input_folder)
+        if cfg.files is not None:
+            files = cfg.files
+        elif cfg.input_folder is not None:
+            files = get_image_files(cfg.input_folder)
+        else:
+            files = []
         result.total_files = len(files)
 
         if not files:

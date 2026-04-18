@@ -6,13 +6,12 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QFormLayout, QFrame, QGroupBox, QHBoxLayout,
+    QFrame, QGroupBox, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from gui.screen_setup import FolderRow
 from ImageEditor.core.metadata_copier import find_exiftool
-from workers.image_editor_worker import OutputFormat
 
 _GROUPBOX_STYLE = """
     QGroupBox {
@@ -24,44 +23,11 @@ _GROUPBOX_STYLE = """
         subcontrol-origin: margin; left: 14px; padding: 0 6px; color: #1f2937;
     }
 """
-_COMBO_STYLE = """
-    QComboBox {
-        border: 1.5px solid #d1d5db; border-radius: 6px; padding: 5px 10px;
-        font-size: 13px; color: #111827; background: #f9fafb; min-height: 36px;
-    }
-    QComboBox:hover  { border-color: #9ca3af; background: #f3f4f6; }
-    QComboBox:focus  { border-color: #d97706; background: #ffffff; }
-    QComboBox::drop-down { border: none; width: 28px; }
-    QComboBox QAbstractItemView {
-        border: 1.5px solid #d1d5db; border-radius: 6px; background: #ffffff;
-        color: #111827; selection-background-color: #fef3c7;
-        selection-color: #92400e; font-size: 13px; padding: 4px;
-    }
-"""
-
-
-def _flabel(text: str) -> QLabel:
-    lbl = QLabel(text)
-    lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #111827; background: transparent;")
-    lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-    return lbl
-
-
-def _hint(text: str) -> QLabel:
-    lbl = QLabel(text)
-    lbl.setStyleSheet("font-size: 11px; color: #6b7280; margin-top: -4px; background: transparent;")
-    lbl.setWordWrap(True)
-    return lbl
 
 
 @dataclass
 class SetupData:
-    input_folder:      Path
-    output_folder:     Path
-    output_format:     str
-    jpeg_quality:      int
-    preserve_metadata: bool
-    skip_existing:     bool
+    input_folder: Path
 
 
 class ImageEditorSetupScreen(QWidget):
@@ -89,7 +55,6 @@ class ImageEditorSetupScreen(QWidget):
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
 
-        # ── 헤더 ─────────────────────────────────────────────────────────────
         title = QLabel("이미지 일괄 편집기")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet(
@@ -98,14 +63,14 @@ class ImageEditorSetupScreen(QWidget):
         )
         root.addWidget(title)
 
-        subtitle = QLabel("모든 이미지 포맷(JPEG·PNG·RAW·HEIC 등)을 일괄 크기 조절 및 자르기 처리합니다.")
+        subtitle = QLabel("편집할 이미지가 있는 폴더를 선택하세요. JPEG·PNG·RAW·HEIC 등 모든 포맷을 지원합니다.")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet(
             "font-size: 13px; color: #374151; background: transparent; margin-bottom: 8px;"
         )
         root.addWidget(subtitle)
 
-        # ── EXIF 상태 카드 ───────────────────────────────────────────────────
+        # exiftool status card
         self._exif_card = QFrame()
         self._exif_card.setFrameShape(QFrame.NoFrame)
         self._exif_card.setFixedHeight(52)
@@ -122,81 +87,25 @@ class ImageEditorSetupScreen(QWidget):
         exif_inner.addWidget(self._exif_label)
         root.addWidget(self._exif_card)
 
-        # ── 1. 파일 경로 ──────────────────────────────────────────────────────
-        folder_group = QGroupBox("  파일 경로")
+        # input folder
+        folder_group = QGroupBox("  입력 폴더")
         folder_group.setStyleSheet(_GROUPBOX_STYLE)
         folder_layout = QVBoxLayout(folder_group)
         folder_layout.setSpacing(10)
         folder_layout.setContentsMargins(20, 16, 20, 20)
-
-        self._input_row  = FolderRow("입력 폴더", "편집할 이미지가 있는 폴더 선택")
-        self._output_row = FolderRow("출력 폴더", "편집된 이미지가 저장될 폴더 선택")
+        self._input_row = FolderRow("입력 폴더", "편집할 이미지가 있는 폴더 선택")
         folder_layout.addWidget(self._input_row)
-        folder_layout.addWidget(self._output_row)
         root.addWidget(folder_group)
-
-        # ── 2. 출력 설정 ──────────────────────────────────────────────────────
-        out_group = QGroupBox("  출력 설정")
-        out_group.setStyleSheet(_GROUPBOX_STYLE)
-        out_layout = QFormLayout(out_group)
-        out_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        out_layout.setContentsMargins(20, 16, 20, 20)
-        out_layout.setSpacing(10)
-        out_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
-        self._format_cb = QComboBox()
-        self._format_cb.addItem("JPEG — 범용 호환, 손실 압축 (권장)", OutputFormat.JPEG)
-        self._format_cb.addItem("PNG  — 무손실, 파일 크기 큼", OutputFormat.PNG)
-        self._format_cb.addItem("WebP — 현대적, 작은 파일 크기", OutputFormat.WEBP)
-        self._format_cb.addItem("원본 포맷 유지 (RAW는 JPEG로 변환)", OutputFormat.KEEP)
-        self._format_cb.setStyleSheet(_COMBO_STYLE)
-        self._format_cb.currentIndexChanged.connect(self._on_format_changed)
-        out_layout.addRow(_flabel("출력 포맷"), self._format_cb)
-
-        self._quality_cb = QComboBox()
-        self._quality_cb.addItem("92   — 고화질 (권장)", 92)
-        self._quality_cb.addItem("95   — 최고 화질 (파일 큼)", 95)
-        self._quality_cb.addItem("85   — 균형", 85)
-        self._quality_cb.addItem("75   — 용량 절약", 75)
-        self._quality_cb.setStyleSheet(_COMBO_STYLE)
-        self._quality_lbl = _flabel("JPEG/WebP 품질")
-        out_layout.addRow(self._quality_lbl, self._quality_cb)
-
-        root.addWidget(out_group)
-
-        # ── 3. 메타데이터 설정 ────────────────────────────────────────────────
-        meta_group = QGroupBox("  메타데이터 설정")
-        meta_group.setStyleSheet(_GROUPBOX_STYLE)
-        meta_layout = QFormLayout(meta_group)
-        meta_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        meta_layout.setContentsMargins(20, 16, 20, 20)
-        meta_layout.setSpacing(10)
-        meta_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
-        self._meta_cb = QComboBox()
-        self._meta_cb.addItem("보전  — GPS·날짜·카메라 EXIF를 출력 이미지에 복사 (권장)", True)
-        self._meta_cb.addItem("무시  — 메타데이터 없이 이미지만 저장", False)
-        self._meta_cb.setStyleSheet(_COMBO_STYLE)
-        meta_layout.addRow(_flabel("EXIF 보전"), self._meta_cb)
-        meta_layout.addRow("", _hint("exiftool이 필요합니다. 미탐지 시 JPEG는 Pillow로 기본 EXIF만 복사됩니다."))
-
-        self._skip_cb = QComboBox()
-        self._skip_cb.addItem("건너뛰기  — 이미 출력된 파일 재처리 안 함 (권장)", True)
-        self._skip_cb.addItem("덮어쓰기  — 기존 출력 파일을 덮어씀", False)
-        self._skip_cb.setStyleSheet(_COMBO_STYLE)
-        meta_layout.addRow(_flabel("중복 파일 처리"), self._skip_cb)
-
-        root.addWidget(meta_group)
         root.addStretch()
 
-        # ── 고정 하단 버튼 ────────────────────────────────────────────────────
+        # footer
         footer = QWidget()
         footer.setStyleSheet("QWidget { background: #ffffff; border-top: 1.5px solid #e5e7eb; }")
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(40, 16, 40, 16)
         footer_layout.setSpacing(8)
 
-        self._run_btn = QPushButton("다음: 변환 파이프라인 설정 →")
+        self._run_btn = QPushButton("다음: 파일 선택 →")
         self._run_btn.setFixedHeight(52)
         self._run_btn.setCursor(Qt.PointingHandCursor)
         self._run_btn.setStyleSheet(
@@ -217,16 +126,6 @@ class ImageEditorSetupScreen(QWidget):
         )
         footer_layout.addWidget(self._back_btn, alignment=Qt.AlignCenter)
         outer.addWidget(footer)
-
-        self._on_format_changed()
-
-    # ── helpers ───────────────────────────────────────────────────────────────
-
-    def _on_format_changed(self) -> None:
-        fmt = self._format_cb.currentData()
-        show = fmt in (OutputFormat.JPEG, OutputFormat.WEBP)
-        self._quality_cb.setVisible(show)
-        self._quality_lbl.setVisible(show)
 
     def _check_exiftool(self) -> None:
         if find_exiftool():
@@ -253,20 +152,10 @@ class ImageEditorSetupScreen(QWidget):
         if not Path(self._input_row.path).is_dir():
             QMessageBox.warning(self, "입력 폴더 없음", "선택한 입력 폴더가 존재하지 않습니다.")
             return False
-        if not self._output_row.path:
-            QMessageBox.warning(self, "출력 폴더 누락", "출력 폴더를 선택해 주세요.")
-            return False
         return True
 
     def get_data(self) -> SetupData:
-        return SetupData(
-            input_folder=Path(self._input_row.path),
-            output_folder=Path(self._output_row.path),
-            output_format=self._format_cb.currentData(),
-            jpeg_quality=self._quality_cb.currentData(),
-            preserve_metadata=bool(self._meta_cb.currentData()),
-            skip_existing=bool(self._skip_cb.currentData()),
-        )
+        return SetupData(input_folder=Path(self._input_row.path))
 
     @property
     def run_button(self) -> QPushButton:
