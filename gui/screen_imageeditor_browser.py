@@ -114,17 +114,19 @@ class _DraggableFileList(QListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setDragEnabled(True)
+        self.setSelectionMode(QListWidget.ExtendedSelection)
 
     def startDrag(self, supported_actions) -> None:
-        item = self.currentItem()
-        if not item:
-            return
-        path: Optional[Path] = item.data(Qt.UserRole)
-        if not path:
+        urls = [
+            QUrl.fromLocalFile(str(it.data(Qt.UserRole)))
+            for it in self.selectedItems()
+            if it.data(Qt.UserRole)
+        ]
+        if not urls:
             return
         drag = QDrag(self)
         mime = QMimeData()
-        mime.setUrls([QUrl.fromLocalFile(str(path))])
+        mime.setUrls(urls)
         drag.setMimeData(mime)
         drag.exec(Qt.CopyAction)
 
@@ -185,7 +187,7 @@ class _DropZone(QWidget):
         outer.setContentsMargins(10, 6, 10, 6)
         outer.setSpacing(4)
 
-        self._hint = QLabel("파일을 여기에 드래그하거나 목록에서 더블클릭하여 선택")
+        self._hint = QLabel("파일을 드래그하거나, 목록에서 더블클릭 (Ctrl+A → 전체선택 후 더블클릭 가능)")
         self._hint.setAlignment(Qt.AlignCenter)
         self._hint.setStyleSheet(
             "font-size: 12px; color: #9ca3af; border: none; background: transparent;"
@@ -500,10 +502,11 @@ class ImageEditorBrowserScreen(QWidget):
                 item.removeChild(item.child(i))
         try:
             dirs = sorted(
-                (e for e in path.iterdir() if e.is_dir() and not e.name.startswith('.')),
+                (e for e in path.iterdir()
+                 if e.is_dir() and not e.name.startswith(('.', '$'))),
                 key=lambda p: p.name.lower(),
             )
-        except PermissionError:
+        except (PermissionError, OSError):
             return
         for d in dirs:
             item.addChild(self._make_dir_item(d))
@@ -520,6 +523,7 @@ class ImageEditorBrowserScreen(QWidget):
         if path is None or not path.is_dir():
             return
         self._current_folder = path
+        current.setExpanded(True)
         self._load_files_in(path)
 
     def _load_files_in(self, folder: Path) -> None:
@@ -532,7 +536,7 @@ class ImageEditorBrowserScreen(QWidget):
                 (e for e in folder.iterdir() if e.is_file() and is_supported(e)),
                 key=lambda p: p.name.lower(),
             )
-        except PermissionError:
+        except (PermissionError, OSError):
             return
         for f in files:
             item = QListWidgetItem(f.name)
@@ -550,9 +554,10 @@ class ImageEditorBrowserScreen(QWidget):
             self._show_preview(path)
 
     def _on_file_double_clicked(self, item: QListWidgetItem) -> None:
-        path: Path = item.data(Qt.UserRole)
-        if path:
-            self._drop_zone.add_file(path)
+        for sel in self._file_list.selectedItems():
+            path: Path = sel.data(Qt.UserRole)
+            if path:
+                self._drop_zone.add_file(path)
 
     def _show_preview(self, path: Path) -> None:
         try:

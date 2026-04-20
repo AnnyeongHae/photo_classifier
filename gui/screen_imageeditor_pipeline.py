@@ -672,22 +672,28 @@ class ImageEditorPipelineScreen(QWidget):
         # ── Output Settings Bar ────────────────────────────────────────────────
         _SCOMBO = (
             "QComboBox { border: 1.5px solid #d1d5db; border-radius: 5px; padding: 2px 6px;"
-            "  font-size: 11px; color: #111827; background: #f9fafb; min-height: 26px; }"
-            "QComboBox:focus { border-color: #d97706; }"
-            "QComboBox::drop-down { border: none; width: 16px; }"
-            "QComboBox QAbstractItemView { font-size: 11px; background: #ffffff;"
-            "  selection-background-color: #fef3c7; selection-color: #92400e; }"
+            "  font-size: 12px; font-weight: 600; color: #111827; background: #ffffff; min-height: 28px; }"
+            "QComboBox:hover { border-color: #9ca3af; background: #f9fafb; }"
+            "QComboBox:focus { border-color: #d97706; background: #ffffff; }"
+            "QComboBox::drop-down { border: none; width: 16px; subcontrol-origin: padding;"
+            "  subcontrol-position: right center; }"
+            "QComboBox QAbstractItemView { font-size: 12px; color: #111827; background: #ffffff;"
+            "  selection-background-color: #fef3c7; selection-color: #92400e;"
+            "  border: 1.5px solid #d1d5db; outline: none; }"
         )
 
         def _blbl(text: str) -> QLabel:
             lbl = QLabel(text)
             lbl.setStyleSheet(
-                "font-size: 11px; font-weight: 700; color: #374151; background: transparent;"
+                "font-size: 11px; font-weight: 700; color: #374151;"
             )
             return lbl
 
         out_bar = QWidget()
-        out_bar.setStyleSheet("QWidget { background: #f8fafc; border-top: 1.5px solid #e2e8f0; }")
+        out_bar.setObjectName("outBar")
+        out_bar.setStyleSheet(
+            "#outBar { background: #f8fafc; border-top: 1.5px solid #e2e8f0; }"
+        )
         out_bar_layout = QHBoxLayout(out_bar)
         out_bar_layout.setContentsMargins(16, 8, 16, 8)
         out_bar_layout.setSpacing(8)
