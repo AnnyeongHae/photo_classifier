@@ -176,11 +176,12 @@ def step_nuitka() -> int:
         "--include-package=gui",
         "--include-package=workers",
         "--include-package=ImageEditor",
+        "--include-package=rawpy",
+        "--include-package=pillow_heif",
         # shapefile: auto-traced via `import shapefile` in core/mvp.py.
         # LivePhotoConverter: auto-traced via explicit imports in live_photo_worker.py.
-        # ImageEditor: force-included because rawpy/pillow-heif are optional imports
-        # that Nuitka's static tracer may miss when the import is inside try/except.
-        # Neither shapefile nor LivePhotoConverter needs --include-package.
+        # rawpy/pillow_heif: force-included because they are optional imports inside
+        # try/except blocks — Nuitka's static tracer misses them.
         "--noinclude-setuptools-mode=nofollow",
         "--noinclude-pytest-mode=nofollow",
 

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Pipeline builder screen: file list + interactive preview + transform pipeline editor."""
+"""Pipeline builder screen: file list + interactive preview + inline transform controls."""
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,9 +11,9 @@ from PIL import Image
 from PySide6.QtCore import Qt, QPoint, QRect
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFormLayout, QFrame, QGroupBox,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QPushButton, QScrollArea, QSizePolicy,
+    QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
@@ -20,6 +22,7 @@ from ImageEditor.core.transform_pipeline import (
     CropMode, CropTransform, ResizeMode, ResizeTransform,
     RotateTransform, TransformPipeline,
 )
+from workers.image_editor_worker import OutputFormat
 
 _GROUPBOX_STYLE = """
     QGroupBox {
@@ -31,10 +34,20 @@ _GROUPBOX_STYLE = """
         subcontrol-origin: margin; left: 14px; padding: 0 6px; color: #1f2937;
     }
 """
+_SECTION_STYLE = """
+    QGroupBox {
+        font-size: 12px; font-weight: 700; color: #374151;
+        border: 1px solid #e5e7eb; border-radius: 8px;
+        margin-top: 10px; padding-top: 14px; background: #fafafa;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #374151;
+    }
+"""
 _COMBO_STYLE = """
     QComboBox {
         border: 1.5px solid #d1d5db; border-radius: 6px; padding: 4px 8px;
-        font-size: 12px; color: #111827; background: #f9fafb; min-height: 30px;
+        font-size: 12px; color: #111827; background: #f9fafb; min-height: 28px;
     }
     QComboBox:hover { border-color: #9ca3af; }
     QComboBox:focus { border-color: #d97706; background: #ffffff; }
@@ -45,20 +58,48 @@ _COMBO_STYLE = """
         selection-color: #92400e; font-size: 12px; padding: 4px;
     }
 """
-_INPUT_STYLE = (
-    "font-size: 12px; padding: 4px 8px; border: 1.5px solid #d1d5db; "
-    "border-radius: 6px; background: #f9fafb; color: #111827; min-height: 28px;"
+_SPIN_STYLE = (
+    "QSpinBox, QDoubleSpinBox {"
+    "  border: 1.5px solid #d1d5db; border-radius: 6px; padding: 3px 6px;"
+    "  font-size: 12px; color: #111827; background: #f9fafb; min-height: 26px; }"
+    "QSpinBox:focus, QDoubleSpinBox:focus { border-color: #d97706; }"
 )
-_BTN_ADD_STYLE = (
+_ROT_BTN_STYLE = (
+    "QPushButton { background: #f3f4f6; color: #374151; font-size: 13px; font-weight: 700;"
+    "  border: 1.5px solid #d1d5db; border-radius: 6px; padding: 4px 0; }"
+    "QPushButton:hover { background: #e5e7eb; border-color: #9ca3af; }"
+    "QPushButton:pressed { background: #d1d5db; }"
+)
+_RESET_BTN_STYLE = (
+    "QPushButton { background: white; color: #6b7280; font-size: 11px;"
+    "  border: 1px solid #e5e7eb; border-radius: 5px; padding: 2px 8px; }"
+    "QPushButton:hover { border-color: #ef4444; color: #ef4444; }"
+)
+_MANUAL_BTN_STYLE = (
     "QPushButton { background: #d97706; color: white; font-size: 12px; font-weight: 700;"
-    "  border-radius: 6px; border: none; padding: 6px 12px; }"
+    "  border-radius: 6px; border: none; padding: 6px 10px; }"
     "QPushButton:hover { background: #b45309; }"
 )
-_BTN_REMOVE_STYLE = (
-    "QPushButton { background: transparent; color: #ef4444; font-size: 14px; font-weight: 700;"
-    "  border: none; padding: 0 4px; min-width: 24px; }"
-    "QPushButton:hover { color: #dc2626; }"
-)
+
+_CROP_PRESETS = [
+    ("1:1 (정사각)", 1, 1),
+    ("4:3", 4, 3),
+    ("3:4 (세로)", 3, 4),
+    ("16:9 (와이드)", 16, 9),
+    ("9:16 (세로)", 9, 16),
+    ("3:2 (DSLR)", 3, 2),
+    ("2:3 (세로 DSLR)", 2, 3),
+    ("직접 입력", 0, 0),
+]
+
+
+@dataclass
+class OutputData:
+    output_folder:     Path
+    output_format:     str
+    jpeg_quality:      int
+    preserve_metadata: bool
+    skip_existing:     bool
 
 
 def _pil_to_pixmap(img: Image.Image, max_w: int, max_h: int) -> QPixmap:
@@ -105,7 +146,6 @@ class PreviewCanvas(QWidget):
         return self._drag_start is not None and self._drag_end is not None
 
     def get_crop_rect_normalized(self) -> Optional[tuple]:
-        """Return (left, top, right, bottom) in 0–1 image-space coords, or None."""
         if not self.has_selection():
             return None
         ir = self._image_rect()
@@ -138,8 +178,6 @@ class PreviewCanvas(QWidget):
             max(0.0, min(1.0, bottom)),
         )
 
-    # ── mouse events ─────────────────────────────────────────────────────────
-
     def mousePressEvent(self, event) -> None:
         if self._crop_mode and event.button() == Qt.LeftButton:
             self._drag_start = event.pos()
@@ -155,8 +193,6 @@ class PreviewCanvas(QWidget):
         if self._crop_mode and event.button() == Qt.LeftButton and self._drag_start:
             self._drag_end = event.pos()
             self.update()
-
-    # ── painting ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -195,30 +231,25 @@ class PreviewCanvas(QWidget):
 
         ir_right  = ir.x() + ir.width()
         ir_bottom = ir.y() + ir.height()
-        x1 = max(ir.left(), x1)
-        y1 = max(ir.top(),  y1)
-        x2 = min(ir_right,  x2)
-        y2 = min(ir_bottom, y2)
+        x1 = max(ir.left(), x1);  y1 = max(ir.top(),  y1)
+        x2 = min(ir_right,  x2);  y2 = min(ir_bottom, y2)
 
         cw, ch = x2 - x1, y2 - y1
         if cw <= 0 or ch <= 0:
             return
 
-        # Darken outside the crop rect
         overlay = QColor(0, 0, 0, 120)
-        painter.fillRect(ir.left(), ir.top(),  ir.width(),        y1 - ir.top(),    overlay)
-        painter.fillRect(ir.left(), y2,         ir.width(),        ir_bottom - y2,   overlay)
-        painter.fillRect(ir.left(), y1,         x1 - ir.left(),   ch,               overlay)
-        painter.fillRect(x2,        y1,         ir_right - x2,    ch,               overlay)
+        painter.fillRect(ir.left(), ir.top(),  ir.width(),      y1 - ir.top(),    overlay)
+        painter.fillRect(ir.left(), y2,         ir.width(),      ir_bottom - y2,   overlay)
+        painter.fillRect(ir.left(), y1,         x1 - ir.left(), ch,               overlay)
+        painter.fillRect(x2,        y1,         ir_right - x2,  ch,               overlay)
 
-        # Amber dashed border
         pen = QPen(QColor("#d97706"))
         pen.setWidth(2)
         pen.setStyle(Qt.DashLine)
         painter.setPen(pen)
         painter.drawRect(x1, y1, cw, ch)
 
-        # Rule-of-thirds grid
         pen2 = QPen(QColor(255, 255, 255, 80))
         pen2.setWidth(1)
         painter.setPen(pen2)
@@ -226,355 +257,16 @@ class PreviewCanvas(QWidget):
             painter.drawLine(x1 + cw * i // 3, y1, x1 + cw * i // 3, y2)
             painter.drawLine(x1, y1 + ch * i // 3, x2, y1 + ch * i // 3)
 
-        # Pixel-size label
         if self._pixmap and ir.width() > 0 and ir.height() > 0:
             img_cw = round(cw / ir.width()  * self._pixmap.width())
             img_ch = round(ch / ir.height() * self._pixmap.height())
+            g = math.gcd(img_cw, img_ch) if (img_cw > 0 and img_ch > 0) else 1
+            ratio_str = f"{img_cw // g}:{img_ch // g}"
             painter.setPen(QColor("white"))
-            painter.drawText(QRect(x1, y1, cw, ch), Qt.AlignCenter, f"{img_cw} × {img_ch}")
-
-
-# ── Resize dialog ─────────────────────────────────────────────────────────────
-
-class ResizeDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("크기 조절 설정")
-        self.setModal(True)
-        self.setMinimumWidth(400)
-        self._transform: Optional[ResizeTransform] = None
-        self._build_ui()
-
-    def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setSpacing(14)
-        layout.setContentsMargins(24, 24, 24, 20)
-
-        form = QFormLayout()
-        form.setSpacing(10)
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
-        self._mode_cb = QComboBox()
-        self._mode_cb.addItem("최대 크기 이내 (비율 유지, 이미 작으면 그대로)", "fit_within")
-        self._mode_cb.addItem("너비 지정 — 높이는 비율 자동", "by_width")
-        self._mode_cb.addItem("높이 지정 — 너비는 비율 자동", "by_height")
-        self._mode_cb.addItem("비율(%) 로 축소/확대", "by_percent")
-        self._mode_cb.addItem("정확한 크기 (비율 무시)", "exact")
-        self._mode_cb.setStyleSheet(_COMBO_STYLE)
-        self._mode_cb.currentIndexChanged.connect(self._update_fields)
-        form.addRow(QLabel("조절 방식"), self._mode_cb)
-
-        self._width_lbl  = QLabel("최대 너비 (px)")
-        self._width_edit = QLineEdit("1920")
-        self._width_edit.setStyleSheet(_INPUT_STYLE)
-        form.addRow(self._width_lbl, self._width_edit)
-
-        self._height_lbl  = QLabel("최대 높이 (px)")
-        self._height_edit = QLineEdit("1080")
-        self._height_edit.setStyleSheet(_INPUT_STYLE)
-        form.addRow(self._height_lbl, self._height_edit)
-
-        self._pct_lbl  = QLabel("비율 (%)")
-        self._pct_edit = QLineEdit("50")
-        self._pct_edit.setStyleSheet(_INPUT_STYLE)
-        form.addRow(self._pct_lbl, self._pct_edit)
-
-        layout.addLayout(form)
-
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.button(QDialogButtonBox.Ok).setText("추가")
-        btn_box.button(QDialogButtonBox.Cancel).setText("취소")
-        btn_box.accepted.connect(self._on_ok)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
-
-        self._update_fields()
-
-    def _update_fields(self) -> None:
-        mode  = self._mode_cb.currentData()
-        fit   = mode == "fit_within"
-        byw   = mode == "by_width"
-        byh   = mode == "by_height"
-        pct   = mode == "by_percent"
-        exact = mode == "exact"
-
-        self._width_lbl.setVisible(fit or byw or exact)
-        self._width_edit.setVisible(fit or byw or exact)
-        self._height_lbl.setVisible(fit or byh or exact)
-        self._height_edit.setVisible(fit or byh or exact)
-        self._pct_lbl.setVisible(pct)
-        self._pct_edit.setVisible(pct)
-
-        if fit:
-            self._width_lbl.setText("최대 너비 (px)")
-            self._height_lbl.setText("최대 높이 (px)")
-        elif exact:
-            self._width_lbl.setText("너비 (px)")
-            self._height_lbl.setText("높이 (px)")
-        elif byw:
-            self._width_lbl.setText("너비 (px)")
-        elif byh:
-            self._height_lbl.setText("높이 (px)")
-
-    def _on_ok(self) -> None:
-        mode = self._mode_cb.currentData()
-        try:
-            w = int(self._width_edit.text())  if self._width_edit.isVisible()  else 0
-            h = int(self._height_edit.text()) if self._height_edit.isVisible() else 0
-            p = float(self._pct_edit.text())  if self._pct_edit.isVisible()    else 100.0
-        except ValueError:
-            QMessageBox.warning(self, "입력 오류", "숫자 값을 입력해 주세요.")
-            return
-
-        mode_map = {
-            "fit_within": ResizeMode.FIT_WITHIN,
-            "by_width":   ResizeMode.BY_WIDTH,
-            "by_height":  ResizeMode.BY_HEIGHT,
-            "by_percent": ResizeMode.BY_PERCENT,
-            "exact":      ResizeMode.EXACT,
-        }
-        self._transform = ResizeTransform(mode=mode_map[mode], width=w, height=h, percent=p)
-        self.accept()
-
-    def get_transform(self) -> Optional[ResizeTransform]:
-        return self._transform
-
-
-# ── Rotate dialog ─────────────────────────────────────────────────────────────
-
-class RotateDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("회전 설정")
-        self.setModal(True)
-        self.setMinimumWidth(360)
-        self._transform: Optional[RotateTransform] = None
-        self._build_ui()
-
-    def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setSpacing(14)
-        layout.setContentsMargins(24, 24, 24, 20)
-
-        preset_lbl = QLabel("빠른 선택")
-        preset_lbl.setStyleSheet("font-size: 12px; font-weight: 700; color: #374151;")
-        layout.addWidget(preset_lbl)
-
-        presets_row = QHBoxLayout()
-        presets_row.setSpacing(8)
-        for label, angle in [("90° 시계방향", 90), ("90° 반시계", -90), ("180°", 180)]:
-            btn = QPushButton(label)
-            btn.setStyleSheet(_BTN_ADD_STYLE)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda checked=False, a=angle: self._select_preset(a))
-            presets_row.addWidget(btn)
-        layout.addLayout(presets_row)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("border: 1px solid #e5e7eb; margin: 4px 0;")
-        layout.addWidget(sep)
-
-        form = QFormLayout()
-        form.setSpacing(10)
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
-        self._angle_edit = QLineEdit("90")
-        self._angle_edit.setStyleSheet(_INPUT_STYLE)
-        self._angle_edit.setPlaceholderText("예: 45, -30, 270")
-        form.addRow(QLabel("각도 직접 입력 (°)"), self._angle_edit)
-        layout.addLayout(form)
-
-        note = QLabel("양수 = 시계방향, 음수 = 반시계방향")
-        note.setStyleSheet("font-size: 11px; color: #6b7280;")
-        layout.addWidget(note)
-
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.button(QDialogButtonBox.Ok).setText("추가")
-        btn_box.button(QDialogButtonBox.Cancel).setText("취소")
-        btn_box.accepted.connect(self._on_ok)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
-
-    def _select_preset(self, angle: int) -> None:
-        self._transform = RotateTransform(angle=angle)
-        self.accept()
-
-    def _on_ok(self) -> None:
-        try:
-            angle = int(self._angle_edit.text())
-        except ValueError:
-            QMessageBox.warning(self, "입력 오류", "정수 각도를 입력해 주세요.")
-            return
-        if angle % 360 == 0:
-            QMessageBox.warning(self, "입력 오류", "0° 회전은 아무 변화가 없습니다.")
-            return
-        self._transform = RotateTransform(angle=angle)
-        self.accept()
-
-    def get_transform(self) -> Optional[RotateTransform]:
-        return self._transform
-
-
-# ── Crop dialog (center-based) ────────────────────────────────────────────────
-
-_ASPECT_PRESETS = [
-    ("원본 비율", None),
-    ("1:1 (정사각)", (1, 1)),
-    ("4:3 (기본 화면)", (4, 3)),
-    ("3:4 (세로 사진)", (3, 4)),
-    ("16:9 (와이드)", (16, 9)),
-    ("9:16 (세로 영상)", (9, 16)),
-    ("3:2 (DSLR 기본)", (3, 2)),
-    ("2:3 (세로 DSLR)", (2, 3)),
-    ("직접 입력", "custom"),
-]
-
-
-class CropDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("자르기 설정 (중앙 기준)")
-        self.setModal(True)
-        self.setMinimumWidth(400)
-        self._transform: Optional[CropTransform] = None
-        self._build_ui()
-
-    def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setSpacing(14)
-        layout.setContentsMargins(24, 24, 24, 20)
-
-        form = QFormLayout()
-        form.setSpacing(10)
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-
-        self._mode_cb = QComboBox()
-        self._mode_cb.addItem("가로세로 비율로 자르기 (중앙 기준)", "aspect")
-        self._mode_cb.addItem("픽셀 크기로 자르기 (중앙 기준)", "pixels")
-        self._mode_cb.setStyleSheet(_COMBO_STYLE)
-        self._mode_cb.currentIndexChanged.connect(self._update_fields)
-        form.addRow(QLabel("자르기 방식"), self._mode_cb)
-
-        self._preset_lbl = QLabel("비율 프리셋")
-        self._preset_cb = QComboBox()
-        for label, _ in _ASPECT_PRESETS:
-            self._preset_cb.addItem(label)
-        self._preset_cb.setCurrentIndex(4)
-        self._preset_cb.setStyleSheet(_COMBO_STYLE)
-        self._preset_cb.currentIndexChanged.connect(self._on_preset_changed)
-        form.addRow(self._preset_lbl, self._preset_cb)
-
-        self._ar_row_lbl = QLabel("비율 (가로:세로)")
-        ar_row = QHBoxLayout()
-        self._ar_num = QLineEdit("16")
-        self._ar_num.setStyleSheet(_INPUT_STYLE)
-        self._ar_den = QLineEdit("9")
-        self._ar_den.setStyleSheet(_INPUT_STYLE)
-        ar_colon = QLabel(":")
-        ar_colon.setAlignment(Qt.AlignCenter)
-        ar_row.addWidget(self._ar_num)
-        ar_row.addWidget(ar_colon)
-        ar_row.addWidget(self._ar_den)
-        self._ar_row_widget = QWidget()
-        self._ar_row_widget.setLayout(ar_row)
-        form.addRow(self._ar_row_lbl, self._ar_row_widget)
-
-        self._px_w_lbl  = QLabel("너비 (px)")
-        self._px_w_edit = QLineEdit("1920")
-        self._px_w_edit.setStyleSheet(_INPUT_STYLE)
-        form.addRow(self._px_w_lbl, self._px_w_edit)
-
-        self._px_h_lbl  = QLabel("높이 (px)")
-        self._px_h_edit = QLineEdit("1080")
-        self._px_h_edit.setStyleSheet(_INPUT_STYLE)
-        form.addRow(self._px_h_lbl, self._px_h_edit)
-
-        layout.addLayout(form)
-
-        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btn_box.button(QDialogButtonBox.Ok).setText("추가")
-        btn_box.button(QDialogButtonBox.Cancel).setText("취소")
-        btn_box.accepted.connect(self._on_ok)
-        btn_box.rejected.connect(self.reject)
-        layout.addWidget(btn_box)
-
-        self._update_fields()
-        self._on_preset_changed()
-
-    def _update_fields(self) -> None:
-        is_aspect = self._mode_cb.currentData() == "aspect"
-        for w in (self._preset_lbl, self._preset_cb, self._ar_row_lbl, self._ar_row_widget):
-            w.setVisible(is_aspect)
-        for w in (self._px_w_lbl, self._px_w_edit, self._px_h_lbl, self._px_h_edit):
-            w.setVisible(not is_aspect)
-
-    def _on_preset_changed(self) -> None:
-        idx = self._preset_cb.currentIndex()
-        _, val = _ASPECT_PRESETS[idx]
-        is_custom = val == "custom"
-        self._ar_row_lbl.setVisible(is_custom or val is None)
-        self._ar_row_widget.setVisible(is_custom or val is None)
-        if isinstance(val, tuple):
-            self._ar_num.setText(str(val[0]))
-            self._ar_den.setText(str(val[1]))
-            self._ar_row_lbl.setVisible(True)
-            self._ar_row_widget.setVisible(True)
-
-    def _on_ok(self) -> None:
-        mode = self._mode_cb.currentData()
-        try:
-            if mode == "aspect":
-                n = int(self._ar_num.text())
-                d = int(self._ar_den.text())
-                if n <= 0 or d <= 0:
-                    raise ValueError
-                self._transform = CropTransform(mode=CropMode.ASPECT_RATIO, ar_num=n, ar_den=d)
-            else:
-                w = int(self._px_w_edit.text())
-                h = int(self._px_h_edit.text())
-                if w <= 0 or h <= 0:
-                    raise ValueError
-                self._transform = CropTransform(mode=CropMode.FIXED_PIXELS, width=w, height=h)
-        except ValueError:
-            QMessageBox.warning(self, "입력 오류", "양수 숫자 값을 입력해 주세요.")
-            return
-        self.accept()
-
-    def get_transform(self) -> Optional[CropTransform]:
-        return self._transform
-
-
-# ── Pipeline item widget ──────────────────────────────────────────────────────
-
-class _PipelineItem(QWidget):
-    def __init__(self, index: int, description: str, on_remove, parent=None):
-        super().__init__(parent)
-        self._index = index
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 4, 4)
-        layout.setSpacing(6)
-
-        num = QLabel(f"{index}.")
-        num.setStyleSheet("font-size: 12px; font-weight: 700; color: #d97706; min-width: 20px;")
-        num.setAlignment(Qt.AlignCenter)
-
-        desc = QLabel(description)
-        desc.setStyleSheet("font-size: 12px; color: #111827;")
-        desc.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        remove_btn = QPushButton("✕")
-        remove_btn.setStyleSheet(_BTN_REMOVE_STYLE)
-        remove_btn.setFixedSize(24, 24)
-        remove_btn.setCursor(Qt.PointingHandCursor)
-        remove_btn.clicked.connect(lambda: on_remove(self._index - 1))
-
-        layout.addWidget(num)
-        layout.addWidget(desc, 1)
-        layout.addWidget(remove_btn)
-        self.setStyleSheet(
-            "background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px;"
-        )
+            painter.drawText(
+                QRect(x1, y1, cw, ch), Qt.AlignCenter,
+                f"{img_cw} × {img_ch}  ({ratio_str})"
+            )
 
 
 # ── Main pipeline screen ──────────────────────────────────────────────────────
@@ -587,6 +279,8 @@ class ImageEditorPipelineScreen(QWidget):
         self._original_img: Optional[Image.Image] = None
         self._pipeline = TransformPipeline()
         self._crop_active = False
+        self._rotate_angle: int = 0
+        self._manual_crop_coords: Optional[tuple] = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -598,7 +292,7 @@ class ImageEditorPipelineScreen(QWidget):
         header_widget = QWidget()
         header_widget.setStyleSheet("background: #f3f4f6;")
         header_layout = QVBoxLayout(header_widget)
-        header_layout.setContentsMargins(40, 24, 40, 8)
+        header_layout.setContentsMargins(40, 20, 40, 8)
         header_layout.setSpacing(4)
 
         title = QLabel("변환 파이프라인 설정")
@@ -607,7 +301,7 @@ class ImageEditorPipelineScreen(QWidget):
             "font-size: 22px; font-weight: 800; color: #111827; background: transparent;"
         )
         subtitle = QLabel(
-            "파일을 클릭하여 미리보기 → 크기 조절·자르기·회전을 파이프라인에 추가 → 변환 시작"
+            "파일 클릭으로 미리보기 → 오른쪽 패널에서 변환 설정 → 변환 시작"
         )
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet("font-size: 12px; color: #6b7280; background: transparent;")
@@ -655,12 +349,29 @@ class ImageEditorPipelineScreen(QWidget):
         self._canvas = PreviewCanvas()
         center_layout.addWidget(self._canvas, 1)
 
+        ba_row = QHBoxLayout()
+        ba_row.setContentsMargins(0, 0, 0, 0)
+        self._before_after_btn = QPushButton("원본 보기")
+        self._before_after_btn.setCheckable(True)
+        self._before_after_btn.setFixedHeight(26)
+        self._before_after_btn.setCursor(Qt.PointingHandCursor)
+        self._before_after_btn.setStyleSheet(
+            "QPushButton { font-size: 11px; font-weight: 600; border: 1.5px solid #d1d5db;"
+            "  border-radius: 5px; padding: 0 10px; background: white; color: #374151; }"
+            "QPushButton:hover { border-color: #9ca3af; }"
+            "QPushButton:checked { background: #fef3c7; border-color: #d97706; color: #92400e; }"
+        )
+        self._before_after_btn.clicked.connect(self._toggle_preview)
+        ba_row.addStretch()
+        ba_row.addWidget(self._before_after_btn)
+        center_layout.addLayout(ba_row)
+
         self._preview_info_lbl = QLabel()
         self._preview_info_lbl.setAlignment(Qt.AlignCenter)
         self._preview_info_lbl.setStyleSheet("font-size: 11px; color: #6b7280;")
         center_layout.addWidget(self._preview_info_lbl)
 
-        # Crop confirmation bar (hidden by default)
+        # Crop confirmation bar
         self._crop_bar = QWidget()
         self._crop_bar.setStyleSheet(
             "background: #fffbeb; border: 1.5px solid #d97706; border-radius: 6px;"
@@ -679,7 +390,7 @@ class ImageEditorPipelineScreen(QWidget):
             "QPushButton:hover { background: #b45309; }"
         )
         self._confirm_crop_btn.setCursor(Qt.PointingHandCursor)
-        self._confirm_crop_btn.clicked.connect(self._confirm_crop)
+        self._confirm_crop_btn.clicked.connect(self._confirm_manual_crop)
 
         self._cancel_crop_btn = QPushButton("✕ 취소")
         self._cancel_crop_btn.setStyleSheet(
@@ -688,7 +399,7 @@ class ImageEditorPipelineScreen(QWidget):
             "QPushButton:hover { border-color: #ef4444; color: #ef4444; }"
         )
         self._cancel_crop_btn.setCursor(Qt.PointingHandCursor)
-        self._cancel_crop_btn.clicked.connect(self._cancel_crop)
+        self._cancel_crop_btn.clicked.connect(self._cancel_manual_crop)
 
         crop_bar_layout.addWidget(crop_hint, 1)
         crop_bar_layout.addWidget(self._confirm_crop_btn)
@@ -698,75 +409,360 @@ class ImageEditorPipelineScreen(QWidget):
 
         body.addWidget(center_group, 1)
 
-        # Panel 3: Pipeline ───────────────────────────────────────────────────
-        right_group = QGroupBox("  변환 파이프라인")
+        # Panel 3: Inline transform controls ─────────────────────────────────
+        right_group = QGroupBox("  변환 설정")
         right_group.setStyleSheet(_GROUPBOX_STYLE)
-        right_group.setFixedWidth(260)
-        right_layout = QVBoxLayout(right_group)
-        right_layout.setContentsMargins(8, 12, 8, 12)
-        right_layout.setSpacing(6)
+        right_group.setFixedWidth(280)
 
-        add_resize_btn = QPushButton("+ 크기 조절 추가")
-        add_resize_btn.setStyleSheet(_BTN_ADD_STYLE)
-        add_resize_btn.setCursor(Qt.PointingHandCursor)
-        add_resize_btn.clicked.connect(self._add_resize)
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.NoFrame)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        right_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
 
-        add_crop_btn = QPushButton("+ 자르기 (비율·중앙)")
-        add_crop_btn.setStyleSheet(_BTN_ADD_STYLE)
-        add_crop_btn.setCursor(Qt.PointingHandCursor)
-        add_crop_btn.clicked.connect(self._add_crop)
+        right_content = QWidget()
+        right_content.setStyleSheet("background: transparent;")
+        rc_layout = QVBoxLayout(right_content)
+        rc_layout.setContentsMargins(8, 4, 8, 8)
+        rc_layout.setSpacing(8)
 
-        add_manual_crop_btn = QPushButton("+ 자르기 (영역 직접 선택)")
-        add_manual_crop_btn.setStyleSheet(_BTN_ADD_STYLE)
-        add_manual_crop_btn.setCursor(Qt.PointingHandCursor)
-        add_manual_crop_btn.clicked.connect(self._add_crop_interactive)
+        # ── Rotate ────────────────────────────────────────────────────────
+        rot_group = QGroupBox("  회전")
+        rot_group.setStyleSheet(_SECTION_STYLE)
+        rot_layout = QVBoxLayout(rot_group)
+        rot_layout.setContentsMargins(8, 12, 8, 10)
+        rot_layout.setSpacing(6)
 
-        add_rotate_btn = QPushButton("+ 회전 추가")
-        add_rotate_btn.setStyleSheet(_BTN_ADD_STYLE)
-        add_rotate_btn.setCursor(Qt.PointingHandCursor)
-        add_rotate_btn.clicked.connect(self._add_rotate)
+        rot_btn_row = QHBoxLayout()
+        rot_btn_row.setSpacing(4)
+        for label, slot in [("90°↻", self._rotate_cw), ("90°↺", self._rotate_ccw), ("180°", self._rotate_180)]:
+            btn = QPushButton(label)
+            btn.setFixedHeight(34)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(_ROT_BTN_STYLE)
+            btn.clicked.connect(slot)
+            rot_btn_row.addWidget(btn)
+        rot_layout.addLayout(rot_btn_row)
 
-        right_layout.addWidget(add_resize_btn)
-        right_layout.addWidget(add_crop_btn)
-        right_layout.addWidget(add_manual_crop_btn)
-        right_layout.addWidget(add_rotate_btn)
+        rot_status_row = QHBoxLayout()
+        rot_status_row.setSpacing(6)
+        self._rot_lbl = QLabel("현재: 0°")
+        self._rot_lbl.setStyleSheet("font-size: 11px; color: #6b7280;")
+        reset_rot = QPushButton("초기화")
+        reset_rot.setFixedHeight(22)
+        reset_rot.setCursor(Qt.PointingHandCursor)
+        reset_rot.setStyleSheet(_RESET_BTN_STYLE)
+        reset_rot.clicked.connect(self._reset_rotate)
+        rot_status_row.addWidget(self._rot_lbl, 1)
+        rot_status_row.addWidget(reset_rot)
+        rot_layout.addLayout(rot_status_row)
+        rc_layout.addWidget(rot_group)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("border: 1px solid #e5e7eb;")
-        right_layout.addWidget(sep)
+        # ── Resize ────────────────────────────────────────────────────────
+        resize_group = QGroupBox("  크기 조절")
+        resize_group.setStyleSheet(_SECTION_STYLE)
+        resize_layout = QVBoxLayout(resize_group)
+        resize_layout.setContentsMargins(8, 12, 8, 10)
+        resize_layout.setSpacing(6)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._pipeline_content = QWidget()
-        self._pipeline_content.setStyleSheet("background: transparent;")
-        self._pipeline_items_layout = QVBoxLayout(self._pipeline_content)
-        self._pipeline_items_layout.setContentsMargins(0, 0, 0, 0)
-        self._pipeline_items_layout.setSpacing(4)
-        self._pipeline_items_layout.addStretch()
-        scroll.setWidget(self._pipeline_content)
-        right_layout.addWidget(scroll, 1)
+        self._resize_cb = QCheckBox("사용")
+        self._resize_cb.setStyleSheet("font-size: 12px; color: #374151;")
+        self._resize_cb.toggled.connect(self._on_resize_toggled)
+        resize_layout.addWidget(self._resize_cb)
 
-        self._empty_lbl = QLabel("파이프라인이 비어있습니다.\n위 버튼으로 변환을 추가하세요.")
-        self._empty_lbl.setAlignment(Qt.AlignCenter)
-        self._empty_lbl.setStyleSheet("font-size: 11px; color: #9ca3af;")
-        self._empty_lbl.setWordWrap(True)
-        right_layout.addWidget(self._empty_lbl)
+        self._resize_controls = QWidget()
+        self._resize_controls.setStyleSheet("background: transparent;")
+        rcc = QVBoxLayout(self._resize_controls)
+        rcc.setContentsMargins(0, 0, 0, 0)
+        rcc.setSpacing(5)
 
-        clear_btn = QPushButton("파이프라인 초기화")
-        clear_btn.setCursor(Qt.PointingHandCursor)
-        clear_btn.setStyleSheet(
-            "QPushButton { border: 1px solid #e5e7eb; color: #6b7280; background: white;"
-            "  font-size: 11px; border-radius: 6px; padding: 4px 8px; }"
-            "QPushButton:hover { border-color: #ef4444; color: #ef4444; }"
+        self._resize_mode_cb = QComboBox()
+        self._resize_mode_cb.addItem("최대 크기 이내 (비율 유지)", "fit_within")
+        self._resize_mode_cb.addItem("너비 지정 (높이 자동)", "by_width")
+        self._resize_mode_cb.addItem("높이 지정 (너비 자동)", "by_height")
+        self._resize_mode_cb.addItem("비율 (%)", "by_percent")
+        self._resize_mode_cb.addItem("정확한 크기", "exact")
+        self._resize_mode_cb.setStyleSheet(_COMBO_STYLE)
+        self._resize_mode_cb.currentIndexChanged.connect(self._on_resize_mode_changed)
+        rcc.addWidget(self._resize_mode_cb)
+
+        self._resize_w_row = QWidget()
+        self._resize_w_row.setStyleSheet("background: transparent;")
+        rw_l = QHBoxLayout(self._resize_w_row)
+        rw_l.setContentsMargins(0, 0, 0, 0)
+        rw_l.setSpacing(6)
+        self._resize_w_lbl = QLabel("너비")
+        self._resize_w_lbl.setStyleSheet("font-size: 12px; color: #374151; min-width: 36px;")
+        self._resize_w_spin = QSpinBox()
+        self._resize_w_spin.setRange(1, 99999)
+        self._resize_w_spin.setValue(1920)
+        self._resize_w_spin.setSuffix(" px")
+        self._resize_w_spin.setStyleSheet(_SPIN_STYLE)
+        self._resize_w_spin.valueChanged.connect(self._rebuild_pipeline)
+        rw_l.addWidget(self._resize_w_lbl)
+        rw_l.addWidget(self._resize_w_spin, 1)
+        rcc.addWidget(self._resize_w_row)
+
+        self._resize_h_row = QWidget()
+        self._resize_h_row.setStyleSheet("background: transparent;")
+        rh_l = QHBoxLayout(self._resize_h_row)
+        rh_l.setContentsMargins(0, 0, 0, 0)
+        rh_l.setSpacing(6)
+        self._resize_h_lbl = QLabel("높이")
+        self._resize_h_lbl.setStyleSheet("font-size: 12px; color: #374151; min-width: 36px;")
+        self._resize_h_spin = QSpinBox()
+        self._resize_h_spin.setRange(1, 99999)
+        self._resize_h_spin.setValue(1080)
+        self._resize_h_spin.setSuffix(" px")
+        self._resize_h_spin.setStyleSheet(_SPIN_STYLE)
+        self._resize_h_spin.valueChanged.connect(self._rebuild_pipeline)
+        rh_l.addWidget(self._resize_h_lbl)
+        rh_l.addWidget(self._resize_h_spin, 1)
+        rcc.addWidget(self._resize_h_row)
+
+        self._resize_pct_row = QWidget()
+        self._resize_pct_row.setStyleSheet("background: transparent;")
+        rp_l = QHBoxLayout(self._resize_pct_row)
+        rp_l.setContentsMargins(0, 0, 0, 0)
+        rp_l.setSpacing(6)
+        rp_l.addWidget(QLabel("비율"))
+        self._resize_pct_spin = QDoubleSpinBox()
+        self._resize_pct_spin.setRange(1.0, 1000.0)
+        self._resize_pct_spin.setValue(50.0)
+        self._resize_pct_spin.setSuffix(" %")
+        self._resize_pct_spin.setSingleStep(5.0)
+        self._resize_pct_spin.setStyleSheet(_SPIN_STYLE)
+        self._resize_pct_spin.valueChanged.connect(self._rebuild_pipeline)
+        rp_l.addWidget(self._resize_pct_spin, 1)
+        rcc.addWidget(self._resize_pct_row)
+
+        resize_layout.addWidget(self._resize_controls)
+        self._resize_controls.setVisible(False)
+        rc_layout.addWidget(resize_group)
+
+        # ── Crop ──────────────────────────────────────────────────────────
+        crop_group = QGroupBox("  자르기")
+        crop_group.setStyleSheet(_SECTION_STYLE)
+        crop_layout = QVBoxLayout(crop_group)
+        crop_layout.setContentsMargins(8, 12, 8, 10)
+        crop_layout.setSpacing(6)
+
+        self._crop_mode_cb = QComboBox()
+        self._crop_mode_cb.addItem("사용 안함", "off")
+        self._crop_mode_cb.addItem("비율 중앙 자르기", "aspect")
+        self._crop_mode_cb.addItem("픽셀 크기 중앙 자르기", "pixels")
+        self._crop_mode_cb.addItem("영역 직접 선택", "manual")
+        self._crop_mode_cb.setStyleSheet(_COMBO_STYLE)
+        self._crop_mode_cb.currentIndexChanged.connect(self._on_crop_mode_changed)
+        crop_layout.addWidget(self._crop_mode_cb)
+
+        # Aspect ratio controls
+        self._crop_aspect_widget = QWidget()
+        self._crop_aspect_widget.setStyleSheet("background: transparent;")
+        ca_layout = QVBoxLayout(self._crop_aspect_widget)
+        ca_layout.setContentsMargins(0, 0, 0, 0)
+        ca_layout.setSpacing(4)
+
+        self._crop_preset_cb = QComboBox()
+        for label, _, _ in _CROP_PRESETS:
+            self._crop_preset_cb.addItem(label)
+        self._crop_preset_cb.setCurrentIndex(3)
+        self._crop_preset_cb.setStyleSheet(_COMBO_STYLE)
+        self._crop_preset_cb.currentIndexChanged.connect(self._on_crop_preset_changed)
+        ca_layout.addWidget(self._crop_preset_cb)
+
+        self._crop_custom_row = QWidget()
+        self._crop_custom_row.setStyleSheet("background: transparent;")
+        cc_l = QHBoxLayout(self._crop_custom_row)
+        cc_l.setContentsMargins(0, 0, 0, 0)
+        cc_l.setSpacing(4)
+        self._crop_ar_num = QSpinBox()
+        self._crop_ar_num.setRange(1, 999)
+        self._crop_ar_num.setValue(16)
+        self._crop_ar_num.setStyleSheet(_SPIN_STYLE)
+        self._crop_ar_num.valueChanged.connect(self._rebuild_pipeline)
+        colon = QLabel(":")
+        colon.setAlignment(Qt.AlignCenter)
+        colon.setStyleSheet("font-size: 14px; font-weight: 700; color: #374151;")
+        self._crop_ar_den = QSpinBox()
+        self._crop_ar_den.setRange(1, 999)
+        self._crop_ar_den.setValue(9)
+        self._crop_ar_den.setStyleSheet(_SPIN_STYLE)
+        self._crop_ar_den.valueChanged.connect(self._rebuild_pipeline)
+        cc_l.addWidget(self._crop_ar_num, 1)
+        cc_l.addWidget(colon)
+        cc_l.addWidget(self._crop_ar_den, 1)
+        self._crop_custom_row.setVisible(False)
+        ca_layout.addWidget(self._crop_custom_row)
+        self._crop_aspect_widget.setVisible(False)
+        crop_layout.addWidget(self._crop_aspect_widget)
+
+        # Pixel crop controls
+        self._crop_pixel_widget = QWidget()
+        self._crop_pixel_widget.setStyleSheet("background: transparent;")
+        cp_layout = QVBoxLayout(self._crop_pixel_widget)
+        cp_layout.setContentsMargins(0, 0, 0, 0)
+        cp_layout.setSpacing(4)
+
+        pw_row = QHBoxLayout()
+        pw_row.setSpacing(6)
+        pw_row.addWidget(QLabel("너비"))
+        self._crop_px_w = QSpinBox()
+        self._crop_px_w.setRange(1, 99999)
+        self._crop_px_w.setValue(1920)
+        self._crop_px_w.setSuffix(" px")
+        self._crop_px_w.setStyleSheet(_SPIN_STYLE)
+        self._crop_px_w.valueChanged.connect(self._rebuild_pipeline)
+        pw_row.addWidget(self._crop_px_w, 1)
+        cp_layout.addLayout(pw_row)
+
+        ph_row = QHBoxLayout()
+        ph_row.setSpacing(6)
+        ph_row.addWidget(QLabel("높이"))
+        self._crop_px_h = QSpinBox()
+        self._crop_px_h.setRange(1, 99999)
+        self._crop_px_h.setValue(1080)
+        self._crop_px_h.setSuffix(" px")
+        self._crop_px_h.setStyleSheet(_SPIN_STYLE)
+        self._crop_px_h.valueChanged.connect(self._rebuild_pipeline)
+        ph_row.addWidget(self._crop_px_h, 1)
+        cp_layout.addLayout(ph_row)
+        self._crop_pixel_widget.setVisible(False)
+        crop_layout.addWidget(self._crop_pixel_widget)
+
+        # Manual crop controls
+        self._crop_manual_widget = QWidget()
+        self._crop_manual_widget.setStyleSheet("background: transparent;")
+        cm_layout = QVBoxLayout(self._crop_manual_widget)
+        cm_layout.setContentsMargins(0, 0, 0, 0)
+        cm_layout.setSpacing(4)
+        drag_btn = QPushButton("이미지에서 영역 드래그")
+        drag_btn.setCursor(Qt.PointingHandCursor)
+        drag_btn.setStyleSheet(_MANUAL_BTN_STYLE)
+        drag_btn.clicked.connect(self._start_manual_crop)
+        cm_layout.addWidget(drag_btn)
+        self._manual_coords_lbl = QLabel("선택된 영역 없음")
+        self._manual_coords_lbl.setStyleSheet("font-size: 11px; color: #6b7280;")
+        self._manual_coords_lbl.setAlignment(Qt.AlignCenter)
+        cm_layout.addWidget(self._manual_coords_lbl)
+        self._crop_manual_widget.setVisible(False)
+        crop_layout.addWidget(self._crop_manual_widget)
+
+        rc_layout.addWidget(crop_group)
+
+        # Pipeline summary
+        self._pipeline_summary_lbl = QLabel("변환 없음 (파일 그대로 저장)")
+        self._pipeline_summary_lbl.setStyleSheet(
+            "font-size: 11px; color: #6b7280; padding: 6px 8px;"
+            "background: #f3f4f6; border-radius: 6px; border: none;"
         )
-        clear_btn.clicked.connect(self._clear_pipeline)
-        right_layout.addWidget(clear_btn)
+        self._pipeline_summary_lbl.setWordWrap(True)
+        self._pipeline_summary_lbl.setAlignment(Qt.AlignCenter)
+        rc_layout.addWidget(self._pipeline_summary_lbl)
+        rc_layout.addStretch()
+
+        right_scroll.setWidget(right_content)
+        right_outer_layout = QVBoxLayout(right_group)
+        right_outer_layout.setContentsMargins(0, 0, 0, 0)
+        right_outer_layout.addWidget(right_scroll, 1)
 
         body.addWidget(right_group)
         outer.addLayout(body, 1)
+
+        # ── Output Settings Bar ────────────────────────────────────────────────
+        _SCOMBO = (
+            "QComboBox { border: 1.5px solid #d1d5db; border-radius: 5px; padding: 2px 6px;"
+            "  font-size: 11px; color: #111827; background: #f9fafb; min-height: 26px; }"
+            "QComboBox:focus { border-color: #d97706; }"
+            "QComboBox::drop-down { border: none; width: 16px; }"
+            "QComboBox QAbstractItemView { font-size: 11px; background: #ffffff;"
+            "  selection-background-color: #fef3c7; selection-color: #92400e; }"
+        )
+
+        def _blbl(text: str) -> QLabel:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(
+                "font-size: 11px; font-weight: 700; color: #374151; background: transparent;"
+            )
+            return lbl
+
+        out_bar = QWidget()
+        out_bar.setStyleSheet("QWidget { background: #f8fafc; border-top: 1.5px solid #e2e8f0; }")
+        out_bar_layout = QHBoxLayout(out_bar)
+        out_bar_layout.setContentsMargins(16, 8, 16, 8)
+        out_bar_layout.setSpacing(8)
+
+        out_bar_layout.addWidget(_blbl("출력 폴더"))
+        self._out_folder_edit = QLineEdit()
+        self._out_folder_edit.setPlaceholderText("출력 폴더를 선택하세요...")
+        self._out_folder_edit.setReadOnly(True)
+        self._out_folder_edit.setStyleSheet(
+            "font-size: 11px; padding: 2px 8px; border: 1.5px solid #d1d5db;"
+            "border-radius: 5px; background: #f9fafb; color: #111827; min-height: 26px;"
+        )
+        out_bar_layout.addWidget(self._out_folder_edit, 3)
+
+        browse_out_btn = QPushButton("찾기")
+        browse_out_btn.setFixedHeight(28)
+        browse_out_btn.setCursor(Qt.PointingHandCursor)
+        browse_out_btn.setStyleSheet(
+            "QPushButton { font-size: 11px; font-weight: 600; background: #f3f4f6;"
+            "  border: 1.5px solid #d1d5db; border-radius: 5px; padding: 0 10px; color: #374151; }"
+            "QPushButton:hover { background: #e5e7eb; }"
+        )
+        browse_out_btn.clicked.connect(self._browse_output_folder)
+        out_bar_layout.addWidget(browse_out_btn)
+
+        _vsep1 = QFrame()
+        _vsep1.setFrameShape(QFrame.VLine)
+        _vsep1.setStyleSheet("color: #e2e8f0;")
+        out_bar_layout.addWidget(_vsep1)
+
+        out_bar_layout.addWidget(_blbl("포맷"))
+        self._format_cb = QComboBox()
+        self._format_cb.addItem("JPEG", OutputFormat.JPEG)
+        self._format_cb.addItem("PNG",  OutputFormat.PNG)
+        self._format_cb.addItem("WebP", OutputFormat.WEBP)
+        self._format_cb.addItem("원본",  OutputFormat.KEEP)
+        self._format_cb.setFixedWidth(80)
+        self._format_cb.setStyleSheet(_SCOMBO)
+        self._format_cb.currentIndexChanged.connect(self._on_format_changed)
+        out_bar_layout.addWidget(self._format_cb)
+
+        self._quality_bar_lbl = _blbl("품질")
+        self._quality_cb = QComboBox()
+        self._quality_cb.addItem("92", 92)
+        self._quality_cb.addItem("95", 95)
+        self._quality_cb.addItem("85", 85)
+        self._quality_cb.addItem("75", 75)
+        self._quality_cb.setFixedWidth(55)
+        self._quality_cb.setStyleSheet(_SCOMBO)
+        out_bar_layout.addWidget(self._quality_bar_lbl)
+        out_bar_layout.addWidget(self._quality_cb)
+
+        _vsep2 = QFrame()
+        _vsep2.setFrameShape(QFrame.VLine)
+        _vsep2.setStyleSheet("color: #e2e8f0;")
+        out_bar_layout.addWidget(_vsep2)
+
+        out_bar_layout.addWidget(_blbl("EXIF"))
+        self._meta_cb = QComboBox()
+        self._meta_cb.addItem("보전", True)
+        self._meta_cb.addItem("무시", False)
+        self._meta_cb.setFixedWidth(60)
+        self._meta_cb.setStyleSheet(_SCOMBO)
+        out_bar_layout.addWidget(self._meta_cb)
+
+        out_bar_layout.addWidget(_blbl("중복"))
+        self._skip_cb = QComboBox()
+        self._skip_cb.addItem("건너뜀", True)
+        self._skip_cb.addItem("덮어쓰기", False)
+        self._skip_cb.setFixedWidth(75)
+        self._skip_cb.setStyleSheet(_SCOMBO)
+        out_bar_layout.addWidget(self._skip_cb)
+
+        outer.addWidget(out_bar)
+        self._on_format_changed()
 
         # ── Footer ────────────────────────────────────────────────────────────
         footer = QWidget()
@@ -800,16 +796,21 @@ class ImageEditorPipelineScreen(QWidget):
         footer_layout.addWidget(self._run_btn)
         outer.addWidget(footer)
 
-        self._update_pipeline_ui()
+        self._update_resize_fields()
 
-    # ── public API ────────────────────────────────────────────────────────────
+    # ── Public API ────────────────────────────────────────────────────────────
 
-    def load_files(self, files: List[Path]) -> None:
+    def load_files(self, files: List[Path], root_folder: Optional[Path] = None) -> None:
         self._files = list(files)
-        self._pipeline = TransformPipeline()
         self._current_file = None
         self._original_img = None
-        self._cancel_crop()
+        self._cancel_manual_crop()
+
+        # Set default output folder
+        base = root_folder or (files[0].parent if files else None)
+        if base:
+            self._out_folder_edit.setText(str(base / "output"))
+
         self._file_list.clear()
         for f in self._files:
             item = QListWidgetItem(f.name)
@@ -818,7 +819,6 @@ class ImageEditorPipelineScreen(QWidget):
         count = len(self._files)
         self._file_count_lbl.setText(f"총 {count}개 파일" if count else "지원 이미지 없음")
         self._canvas.set_pixmap(None)
-        self._update_pipeline_ui()
         if self._files:
             self._file_list.setCurrentRow(0)
 
@@ -833,13 +833,15 @@ class ImageEditorPipelineScreen(QWidget):
     def back_button(self) -> QPushButton:
         return self._back_btn
 
-    # ── file selection ────────────────────────────────────────────────────────
+    # ── File selection ────────────────────────────────────────────────────────
 
     def _on_file_selected(self, row: int) -> None:
         if row < 0 or row >= len(self._files):
             return
-        self._cancel_crop()
+        self._cancel_manual_crop()
         self._current_file = self._files[row]
+        self._before_after_btn.setChecked(False)
+        self._before_after_btn.setText("원본 보기")
         self._load_preview(apply_pipeline=not self._pipeline.is_empty())
 
     def _load_preview(self, apply_pipeline: bool) -> None:
@@ -848,7 +850,11 @@ class ImageEditorPipelineScreen(QWidget):
         try:
             img, _ = load_image(self._current_file, preview_only=True)
             self._original_img = img
-            disp = self._pipeline.apply(img.copy()) if (apply_pipeline and not self._pipeline.is_empty()) else img
+            disp = (
+                self._pipeline.apply(img.copy())
+                if apply_pipeline and not self._pipeline.is_empty()
+                else img
+            )
             px = _pil_to_pixmap(disp, 1200, 900)
             self._canvas.set_pixmap(px)
             w, h = img.size
@@ -858,25 +864,82 @@ class ImageEditorPipelineScreen(QWidget):
             self._canvas.set_pixmap(None)
             self._preview_info_lbl.setText(f"미리보기 불가: {e}")
 
-    # ── pipeline management ───────────────────────────────────────────────────
+    # ── Rotate controls ───────────────────────────────────────────────────────
 
-    def _add_resize(self) -> None:
-        dlg = ResizeDialog(self)
-        if dlg.exec() == QDialog.Accepted:
-            t = dlg.get_transform()
-            if t:
-                self._pipeline.transforms.append(t)
-                self._update_pipeline_ui()
+    def _rotate_cw(self) -> None:
+        self._rotate_angle = (self._rotate_angle + 90) % 360
+        self._rebuild_pipeline()
 
-    def _add_crop(self) -> None:
-        dlg = CropDialog(self)
-        if dlg.exec() == QDialog.Accepted:
-            t = dlg.get_transform()
-            if t:
-                self._pipeline.transforms.append(t)
-                self._update_pipeline_ui()
+    def _rotate_ccw(self) -> None:
+        self._rotate_angle = (self._rotate_angle - 90) % 360
+        self._rebuild_pipeline()
 
-    def _add_crop_interactive(self) -> None:
+    def _rotate_180(self) -> None:
+        self._rotate_angle = (self._rotate_angle + 180) % 360
+        self._rebuild_pipeline()
+
+    def _reset_rotate(self) -> None:
+        self._rotate_angle = 0
+        self._rebuild_pipeline()
+
+    # ── Resize controls ───────────────────────────────────────────────────────
+
+    def _on_resize_toggled(self, checked: bool) -> None:
+        self._resize_controls.setVisible(checked)
+        self._rebuild_pipeline()
+
+    def _on_resize_mode_changed(self) -> None:
+        self._update_resize_fields()
+        self._rebuild_pipeline()
+
+    def _update_resize_fields(self) -> None:
+        mode = self._resize_mode_cb.currentData()
+        fit   = mode == "fit_within"
+        byw   = mode == "by_width"
+        byh   = mode == "by_height"
+        pct   = mode == "by_percent"
+        exact = mode == "exact"
+
+        self._resize_w_row.setVisible(fit or byw or exact)
+        self._resize_h_row.setVisible(fit or byh or exact)
+        self._resize_pct_row.setVisible(pct)
+
+        if fit:
+            self._resize_w_lbl.setText("최대 너비")
+            self._resize_h_lbl.setText("최대 높이")
+        else:
+            self._resize_w_lbl.setText("너비")
+            self._resize_h_lbl.setText("높이")
+
+    # ── Crop controls ─────────────────────────────────────────────────────────
+
+    def _on_crop_mode_changed(self) -> None:
+        mode = self._crop_mode_cb.currentData()
+        self._crop_aspect_widget.setVisible(mode == "aspect")
+        self._crop_pixel_widget.setVisible(mode == "pixels")
+        self._crop_manual_widget.setVisible(mode == "manual")
+        if mode != "manual":
+            self._cancel_manual_crop()
+        if mode == "manual":
+            self._manual_crop_coords = None
+            self._manual_coords_lbl.setText("선택된 영역 없음")
+        self._rebuild_pipeline()
+
+    def _on_crop_preset_changed(self) -> None:
+        idx = self._crop_preset_cb.currentIndex()
+        _, n, d = _CROP_PRESETS[idx]
+        is_custom = (n == 0 and d == 0)
+        self._crop_custom_row.setVisible(is_custom)
+        if not is_custom and n > 0:
+            self._crop_ar_num.blockSignals(True)
+            self._crop_ar_den.blockSignals(True)
+            self._crop_ar_num.setValue(n)
+            self._crop_ar_den.setValue(d)
+            self._crop_ar_num.blockSignals(False)
+            self._crop_ar_den.blockSignals(False)
+        self._rebuild_pipeline()
+
+    def _start_manual_crop(self) -> None:
         if not self._current_file:
             QMessageBox.information(self, "파일 없음", "먼저 파일 목록에서 이미지를 선택하세요.")
             return
@@ -885,52 +948,137 @@ class ImageEditorPipelineScreen(QWidget):
         self._canvas.set_crop_mode(True)
         self._crop_bar.setVisible(True)
 
-    def _confirm_crop(self) -> None:
+    def _confirm_manual_crop(self) -> None:
         coords = self._canvas.get_crop_rect_normalized()
         if coords is None:
             QMessageBox.information(self, "선택 없음", "이미지에서 영역을 드래그하여 선택하세요.")
             return
-        left, top, right, bottom = coords
-        t = CropTransform(mode=CropMode.MANUAL, left=left, top=top, right=right, bottom=bottom)
-        self._pipeline.transforms.append(t)
-        self._cancel_crop()
-        self._update_pipeline_ui()
+        self._manual_crop_coords = coords
+        lp = round(coords[0] * 100)
+        tp = round(coords[1] * 100)
+        rp = round(coords[2] * 100)
+        bp = round(coords[3] * 100)
+        self._manual_coords_lbl.setText(f"({lp}%,{tp}%) → ({rp}%,{bp}%)")
+        self._cancel_manual_crop()
+        self._rebuild_pipeline()
 
-    def _cancel_crop(self) -> None:
+    def _cancel_manual_crop(self) -> None:
         self._crop_active = False
         self._canvas.set_crop_mode(False)
         self._crop_bar.setVisible(False)
 
-    def _add_rotate(self) -> None:
-        dlg = RotateDialog(self)
-        if dlg.exec() == QDialog.Accepted:
-            t = dlg.get_transform()
-            if t:
-                self._pipeline.transforms.append(t)
-                self._update_pipeline_ui()
+    # ── Pipeline rebuilding ───────────────────────────────────────────────────
 
-    def _remove_transform(self, index: int) -> None:
-        if 0 <= index < len(self._pipeline.transforms):
-            self._pipeline.transforms.pop(index)
-            self._update_pipeline_ui()
+    def _rebuild_pipeline(self) -> None:
+        transforms = []
 
-    def _clear_pipeline(self) -> None:
-        self._pipeline.transforms.clear()
-        self._update_pipeline_ui()
+        if self._rotate_angle % 360 != 0:
+            transforms.append(RotateTransform(angle=self._rotate_angle))
 
-    def _update_pipeline_ui(self) -> None:
-        while self._pipeline_items_layout.count() > 1:
-            item = self._pipeline_items_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        if self._resize_cb.isChecked():
+            mode_key = self._resize_mode_cb.currentData()
+            mode_map = {
+                "fit_within": ResizeMode.FIT_WITHIN,
+                "by_width":   ResizeMode.BY_WIDTH,
+                "by_height":  ResizeMode.BY_HEIGHT,
+                "by_percent": ResizeMode.BY_PERCENT,
+                "exact":      ResizeMode.EXACT,
+            }
+            transforms.append(ResizeTransform(
+                mode=mode_map[mode_key],
+                width=self._resize_w_spin.value(),
+                height=self._resize_h_spin.value(),
+                percent=self._resize_pct_spin.value(),
+            ))
 
-        descs = self._pipeline.descriptions()
-        for i, desc in enumerate(descs):
-            widget = _PipelineItem(i + 1, desc, self._remove_transform)
-            self._pipeline_items_layout.insertWidget(i, widget)
+        crop_mode = self._crop_mode_cb.currentData()
+        if crop_mode == "aspect":
+            idx = self._crop_preset_cb.currentIndex()
+            _, n, d = _CROP_PRESETS[idx]
+            if n == 0 and d == 0:
+                n = self._crop_ar_num.value()
+                d = self._crop_ar_den.value()
+            transforms.append(CropTransform(mode=CropMode.ASPECT_RATIO, ar_num=n, ar_den=d))
+        elif crop_mode == "pixels":
+            transforms.append(CropTransform(
+                mode=CropMode.FIXED_PIXELS,
+                width=self._crop_px_w.value(),
+                height=self._crop_px_h.value(),
+            ))
+        elif crop_mode == "manual" and self._manual_crop_coords is not None:
+            l, t, r, b = self._manual_crop_coords
+            transforms.append(CropTransform(
+                mode=CropMode.MANUAL, left=l, top=t, right=r, bottom=b,
+            ))
 
-        self._empty_lbl.setVisible(not descs)
+        self._pipeline = TransformPipeline(transforms=transforms)
+        self._update_summary()
 
-        # Auto real-time preview when not in interactive crop mode
         if self._current_file and not self._crop_active:
-            self._load_preview(apply_pipeline=True)
+            self._load_preview(apply_pipeline=not self._before_after_btn.isChecked())
+
+        # Update rotation label
+        angle_display = self._rotate_angle % 360
+        if angle_display == 0:
+            self._rot_lbl.setText("현재: 0°")
+        elif angle_display == 90:
+            self._rot_lbl.setText("현재: 90° 시계방향")
+        elif angle_display == 180:
+            self._rot_lbl.setText("현재: 180°")
+        elif angle_display == 270:
+            self._rot_lbl.setText("현재: 90° 반시계방향")
+        else:
+            self._rot_lbl.setText(f"현재: {angle_display}°")
+
+    def _update_summary(self) -> None:
+        descs = self._pipeline.descriptions()
+        if descs:
+            self._pipeline_summary_lbl.setText(" → ".join(descs))
+            self._pipeline_summary_lbl.setStyleSheet(
+                "font-size: 11px; color: #92400e; padding: 6px 8px;"
+                "background: #fef3c7; border-radius: 6px; border: none;"
+            )
+        else:
+            self._pipeline_summary_lbl.setText("변환 없음 (파일 그대로 저장)")
+            self._pipeline_summary_lbl.setStyleSheet(
+                "font-size: 11px; color: #6b7280; padding: 6px 8px;"
+                "background: #f3f4f6; border-radius: 6px; border: none;"
+            )
+
+    # ── Output settings ───────────────────────────────────────────────────────
+
+    def _browse_output_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self, "출력 폴더 선택", self._out_folder_edit.text() or ""
+        )
+        if folder:
+            self._out_folder_edit.setText(folder)
+
+    def _on_format_changed(self) -> None:
+        fmt = self._format_cb.currentData()
+        show = fmt in (OutputFormat.JPEG, OutputFormat.WEBP)
+        self._quality_bar_lbl.setVisible(show)
+        self._quality_cb.setVisible(show)
+
+    def validate_output(self) -> bool:
+        if not self._out_folder_edit.text().strip():
+            QMessageBox.warning(self, "출력 폴더 누락", "출력 폴더를 선택해 주세요.")
+            return False
+        return True
+
+    def get_output_data(self) -> OutputData:
+        return OutputData(
+            output_folder=Path(self._out_folder_edit.text().strip()),
+            output_format=self._format_cb.currentData(),
+            jpeg_quality=self._quality_cb.currentData() or 92,
+            preserve_metadata=bool(self._meta_cb.currentData()),
+            skip_existing=bool(self._skip_cb.currentData()),
+        )
+
+    # ── Before/After toggle ───────────────────────────────────────────────────
+
+    def _toggle_preview(self) -> None:
+        show_original = self._before_after_btn.isChecked()
+        self._before_after_btn.setText("결과 보기" if show_original else "원본 보기")
+        if self._current_file:
+            self._load_preview(apply_pipeline=not show_original)

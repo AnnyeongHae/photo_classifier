@@ -7,22 +7,18 @@ from typing import List
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QStackedWidget
 
-from gui.screen_imageeditor_setup      import ImageEditorSetupScreen
-from gui.screen_imageeditor_filebrowser import ImageEditorFileBrowserScreen
-from gui.screen_imageeditor_pipeline   import ImageEditorPipelineScreen
-from gui.screen_imageeditor_output     import ImageEditorOutputScreen
-from gui.screen_imageeditor_progress   import ImageEditorProgressScreen
-from gui.screen_imageeditor_summary    import ImageEditorSummaryScreen
+from gui.screen_imageeditor_browser  import ImageEditorBrowserScreen
+from gui.screen_imageeditor_pipeline import ImageEditorPipelineScreen
+from gui.screen_imageeditor_progress import ImageEditorProgressScreen
+from gui.screen_imageeditor_summary  import ImageEditorSummaryScreen
 from workers.image_editor_worker import (
     ImageEditorConfig, ImageEditorResult, ImageEditorWorker,
 )
 
-_SCREEN_SETUP        = 0
-_SCREEN_FILEBROWSER  = 1
-_SCREEN_PIPELINE     = 2
-_SCREEN_OUTPUT       = 3
-_SCREEN_PROGRESS     = 4
-_SCREEN_SUMMARY      = 5
+_SCREEN_BROWSER  = 0
+_SCREEN_PIPELINE = 1
+_SCREEN_PROGRESS = 2
+_SCREEN_SUMMARY  = 3
 
 
 class ImageEditorWindow(QMainWindow):
@@ -34,42 +30,33 @@ class ImageEditorWindow(QMainWindow):
 
         self._on_back_to_hub = on_back_to_hub
         self._worker: ImageEditorWorker | None = None
-        self._selected_files: List[Path] = []
 
         self._stack = QStackedWidget()
         self.setCentralWidget(self._stack)
 
-        self._setup_screen      = ImageEditorSetupScreen()
-        self._filebrowser_screen = ImageEditorFileBrowserScreen()
-        self._pipeline_screen   = ImageEditorPipelineScreen()
-        self._output_screen     = ImageEditorOutputScreen()
-        self._progress_screen   = ImageEditorProgressScreen(on_cancel=self._cancel_pipeline)
-        self._summary_screen    = ImageEditorSummaryScreen(on_process_more=self._go_setup)
+        self._browser_screen  = ImageEditorBrowserScreen()
+        self._pipeline_screen = ImageEditorPipelineScreen()
+        self._progress_screen = ImageEditorProgressScreen(on_cancel=self._cancel_pipeline)
+        self._summary_screen  = ImageEditorSummaryScreen(on_process_more=self._go_browser)
 
-        self._stack.addWidget(self._setup_screen)       # 0
-        self._stack.addWidget(self._filebrowser_screen) # 1
-        self._stack.addWidget(self._pipeline_screen)    # 2
-        self._stack.addWidget(self._output_screen)      # 3
-        self._stack.addWidget(self._progress_screen)    # 4
-        self._stack.addWidget(self._summary_screen)     # 5
+        self._stack.addWidget(self._browser_screen)   # 0
+        self._stack.addWidget(self._pipeline_screen)  # 1
+        self._stack.addWidget(self._progress_screen)  # 2
+        self._stack.addWidget(self._summary_screen)   # 3
 
         # navigation wiring
-        self._setup_screen.run_button.clicked.connect(self._go_filebrowser)
-        self._filebrowser_screen.back_button.clicked.connect(self._go_setup)
-        self._filebrowser_screen.next_button.clicked.connect(self._go_pipeline)
-        self._pipeline_screen.back_button.clicked.connect(self._go_filebrowser)
-        self._pipeline_screen.run_button.clicked.connect(self._go_output)
-        self._output_screen.back_button.clicked.connect(self._go_pipeline_from_output)
-        self._output_screen.run_button.clicked.connect(self._start_pipeline)
+        self._browser_screen.next_button.clicked.connect(self._go_pipeline)
+        self._pipeline_screen.back_button.clicked.connect(self._go_browser)
+        self._pipeline_screen.run_button.clicked.connect(self._start_pipeline)
 
         if self._on_back_to_hub:
-            self._setup_screen.back_button.clicked.connect(self._back_to_hub)
+            self._browser_screen.back_button.clicked.connect(self._back_to_hub)
             self._summary_screen.back_button.clicked.connect(self._back_to_hub)
         else:
-            self._setup_screen.back_button.hide()
+            self._browser_screen.back_button.hide()
             self._summary_screen.back_button.hide()
 
-        self._stack.setCurrentIndex(_SCREEN_SETUP)
+        self._stack.setCurrentIndex(_SCREEN_BROWSER)
 
     # ── navigation ─────────────────────────────────────────────────────────────
 
@@ -78,33 +65,21 @@ class ImageEditorWindow(QMainWindow):
         if self._on_back_to_hub:
             self._on_back_to_hub()
 
-    def _go_setup(self) -> None:
-        self._stack.setCurrentIndex(_SCREEN_SETUP)
-
-    def _go_filebrowser(self) -> None:
-        if not self._setup_screen.validate():
-            return
-        data = self._setup_screen.get_data()
-        self._filebrowser_screen.load_folder(data.input_folder)
-        self._stack.setCurrentIndex(_SCREEN_FILEBROWSER)
+    def _go_browser(self) -> None:
+        self._stack.setCurrentIndex(_SCREEN_BROWSER)
 
     def _go_pipeline(self) -> None:
-        if not self._filebrowser_screen.validate():
+        if not self._browser_screen.validate():
             return
-        self._selected_files = self._filebrowser_screen.get_selected_files()
-        self._pipeline_screen.load_files(self._selected_files)
-        self._stack.setCurrentIndex(_SCREEN_PIPELINE)
-
-    def _go_output(self) -> None:
-        self._stack.setCurrentIndex(_SCREEN_OUTPUT)
-
-    def _go_pipeline_from_output(self) -> None:
+        files = self._browser_screen.get_selected_files()
+        root  = self._browser_screen.get_root_folder()
+        self._pipeline_screen.load_files(files, root_folder=root)
         self._stack.setCurrentIndex(_SCREEN_PIPELINE)
 
     # ── worker lifecycle ────────────────────────────────────────────────────────
 
     def _start_pipeline(self) -> None:
-        if not self._output_screen.validate():
+        if not self._pipeline_screen.validate_output():
             return
 
         pipeline = self._pipeline_screen.get_pipeline()
@@ -119,11 +94,11 @@ class ImageEditorWindow(QMainWindow):
             if reply != QMessageBox.Yes:
                 return
 
-        out = self._output_screen.get_data()
+        out = self._pipeline_screen.get_output_data()
         config = ImageEditorConfig(
             output_folder=out.output_folder,
             pipeline=pipeline,
-            files=self._selected_files,
+            files=self._browser_screen.get_selected_files(),
             output_format=out.output_format,
             jpeg_quality=out.jpeg_quality,
             preserve_metadata=out.preserve_metadata,
@@ -160,7 +135,7 @@ class ImageEditorWindow(QMainWindow):
         self._worker = None
         if result.cancelled:
             QMessageBox.information(self, "취소됨", "편집이 취소되었습니다.")
-            self._stack.setCurrentIndex(_SCREEN_SETUP)
+            self._stack.setCurrentIndex(_SCREEN_BROWSER)
             return
         self._summary_screen.load_result(result)
         self._stack.setCurrentIndex(_SCREEN_SUMMARY)
@@ -169,7 +144,7 @@ class ImageEditorWindow(QMainWindow):
     def _on_error(self, message: str) -> None:
         self._worker = None
         QMessageBox.critical(self, "오류", f"편집 중 오류가 발생했습니다:\n\n{message}")
-        self._stack.setCurrentIndex(_SCREEN_SETUP)
+        self._stack.setCurrentIndex(_SCREEN_BROWSER)
 
     def closeEvent(self, event) -> None:
         if self._worker and self._worker.isRunning():
