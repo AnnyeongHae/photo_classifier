@@ -163,7 +163,11 @@ class MainWindow(QMainWindow):
                 self._worker.cancel()
                 self._worker.wait(3000)
                 event.accept()
+                if self._on_back_to_hub:
+                    self._on_back_to_hub()
             else:
                 event.ignore()
         else:
             event.accept()
+            if self._on_back_to_hub:
+                self._on_back_to_hub()

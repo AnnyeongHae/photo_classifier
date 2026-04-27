@@ -7,6 +7,9 @@ from typing import Optional
 from PySide6.QtCore import QThread, Signal
 
 
+LIVE_PHOTO_VIDEO_EXTENSIONS = {".mov", ".mp4", ".m4v", ".3gp", ".3g2"}
+
+
 @dataclass
 class LivePhotoConfig:
     input_folder: Path
@@ -29,16 +32,12 @@ class LivePhotoResult:
 
 
 class LivePhotoWorker(QThread):
-    """QThread worker for Live Photo batch conversion.
+    """QThread worker for Live Photo still-image extraction."""
 
-    Uses FrameExtractor / ImageConverter / MetadataHandler directly
-    (not BatchProcessor) so logging doesn't conflict with the main app.
-    """
-
-    progress = Signal(str, int, int)      # step_label, done, total
-    stats_updated = Signal(int, int, int) # processed, skipped, failed
-    log = Signal(str)                     # one log line (plain text)
-    finished = Signal(object)             # LivePhotoResult
+    progress = Signal(str, int, int)
+    stats_updated = Signal(int, int, int)
+    log = Signal(str)
+    finished = Signal(object)
     error = Signal(str)
 
     def __init__(self, config: LivePhotoConfig, parent=None):
@@ -48,8 +47,6 @@ class LivePhotoWorker(QThread):
 
     def cancel(self) -> None:
         self._cancel_flag.set()
-
-    # ── main thread logic ─────────────────────────────────────────────────────
 
     def run(self) -> None:
         try:
@@ -66,7 +63,6 @@ class LivePhotoWorker(QThread):
         cfg = self._config
         result = LivePhotoResult()
 
-        # Initialise tools
         frame_extractor = FrameExtractor(use_ensemble=True)
         image_converter = ImageConverter(jpeg_quality=cfg.jpeg_quality)
 
@@ -74,42 +70,31 @@ class LivePhotoWorker(QThread):
         if cfg.preserve_metadata:
             try:
                 metadata_handler = MetadataHandler(cfg.exiftool_path or None)
-                self.log.emit("[INFO] exiftool 탐지됨 — EXIF 보전 활성화")
+                self.log.emit("[INFO] exiftool found - metadata preservation enabled")
             except FileNotFoundError:
-                self.log.emit("[WARN] exiftool 미탐지 — 메타데이터 없이 저장")
-                metadata_handler = None
+                self.log.emit("[WARN] exiftool not found - saving without metadata copy")
         else:
-            self.log.emit("[INFO] 메타데이터 보전 비활성화")
+            self.log.emit("[INFO] metadata preservation disabled")
 
-        # Collect video files
-        patterns = ["*.mov", "*.mp4", "*.MP4", "*.MOV"]
-        seen: set = set()
-        video_files = []
-        for pattern in patterns:
-            for f in cfg.input_folder.glob(f"**/{pattern}"):
-                resolved = f.resolve()
-                if resolved not in seen:
-                    seen.add(resolved)
-                    video_files.append(f)
-
+        video_files = self._collect_video_files(cfg.input_folder)
         total = len(video_files)
         if total == 0:
-            self.log.emit("[WARN] 처리할 파일이 없습니다.")
-            self.progress.emit("파일 없음", 0, 0)
+            supported = ", ".join(sorted(LIVE_PHOTO_VIDEO_EXTENSIONS))
+            self.log.emit(f"[WARN] no supported video files found ({supported})")
+            self.progress.emit("No files", 0, 0)
             return result
 
-        self.log.emit(f"[INFO] 총 {total}개 파일 발견")
+        self.log.emit(f"[INFO] found {total} video files")
         cfg.output_folder.mkdir(parents=True, exist_ok=True)
         file_ext = ".png" if cfg.output_format == "png" else ".jpg"
 
         for i, video_file in enumerate(video_files, 1):
             if self._cancel_flag.is_set():
                 result.cancelled = True
-                self.log.emit("[INFO] 사용자 취소 요청")
+                self.log.emit("[INFO] cancelled by user")
                 break
 
-            self.progress.emit(f"처리 중: {video_file.name}", i - 1, total)
-
+            self.progress.emit(f"Processing {video_file.name}", i - 1, total)
             output_file = cfg.output_folder / f"{video_file.stem}{file_ext}"
 
             if output_file.exists() and cfg.skip_existing:
@@ -127,7 +112,7 @@ class LivePhotoWorker(QThread):
                     metadata_handler,
                 )
                 result.processed += 1
-                self.log.emit(f"[ OK ] [{i}/{total}] {video_file.name} → {output_file.name}")
+                self.log.emit(f"[ OK ] [{i}/{total}] {video_file.name} -> {output_file.name}")
             except Exception as exc:  # noqa: BLE001
                 result.failed += 1
                 result.errors.append(f"{video_file.name}: {exc}")
@@ -135,11 +120,23 @@ class LivePhotoWorker(QThread):
 
             self.stats_updated.emit(result.processed, result.skipped, result.failed)
 
-        self.progress.emit("완료", total, total)
+        self.progress.emit("Complete", total, total)
         self.log.emit(
-            f"[INFO] 완료 — 변환 {result.processed} / 건너뜀 {result.skipped} / 실패 {result.failed}"
+            f"[INFO] complete - processed {result.processed} / skipped {result.skipped} / failed {result.failed}"
         )
         return result
+
+    def _collect_video_files(self, input_folder: Path) -> list[Path]:
+        seen: set[Path] = set()
+        video_files: list[Path] = []
+        for path in input_folder.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in LIVE_PHOTO_VIDEO_EXTENSIONS:
+                continue
+            resolved = path.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                video_files.append(path)
+        return video_files
 
     def _convert_single(
         self,
@@ -151,18 +148,17 @@ class LivePhotoWorker(QThread):
     ) -> None:
         cfg = self._config
 
-        frames, metadata = frame_extractor.extract_candidates(
+        frames, _metadata = frame_extractor.extract_candidates(
             video_file, return_metadata=True
         )
 
-        # Pick frame according to user choice
         if not frames:
             raise RuntimeError("No frames extracted from video")
         if cfg.frame_mode == "first":
             frame_rgb = frames[0]
         elif cfg.frame_mode == "middle":
             frame_rgb = frames[min(1, len(frames) - 1)]
-        else:  # "sharpest" (default)
+        else:
             frame_rgb = frames[min(2, len(frames) - 1)]
 
         output_file.parent.mkdir(parents=True, exist_ok=True)

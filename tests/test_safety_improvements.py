@@ -7,6 +7,7 @@ from pathlib import Path
 from core.archive import expand_archives
 from core.mover import move_files
 from core.video_converter import ProcessRegistry, _resolve_output_path
+from workers.live_photo_worker import LivePhotoConfig, LivePhotoWorker
 
 
 class SafetyImprovementTests(unittest.TestCase):
@@ -84,6 +85,19 @@ class SafetyImprovementTests(unittest.TestCase):
 
         self.assertTrue(first.terminated)
         self.assertTrue(second.terminated)
+
+    def test_live_photo_worker_collects_mobile_video_extensions_case_insensitively(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("a.MOV", "b.mp4", "c.M4V", "d.3gp", "e.3G2", "ignore.jpg"):
+                (root / name).write_bytes(b"stub")
+
+            worker = LivePhotoWorker(
+                LivePhotoConfig(input_folder=root, output_folder=root / "out")
+            )
+            names = sorted(path.name for path in worker._collect_video_files(root))
+
+            self.assertEqual(names, ["a.MOV", "b.mp4", "c.M4V", "d.3gp", "e.3G2"])
 
 
 if __name__ == "__main__":
