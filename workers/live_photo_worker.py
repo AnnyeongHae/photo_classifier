@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import shutil
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +20,7 @@ class LivePhotoConfig:
     frame_mode: str = "sharpest"     # "sharpest" | "first" | "middle"
     preserve_metadata: bool = True
     skip_existing: bool = True
-    max_duration_seconds: float = 10.0
+    max_duration_seconds: float = 6.0
     exiftool_path: Optional[str] = None
 
 
@@ -164,11 +165,43 @@ class LivePhotoWorker(QThread):
                 self.log.emit(f"[FAIL] {path.name}: invalid video duration")
                 continue
             if duration > max_duration:
-                result.skipped += 1
-                self.log.emit(f"[SKIP] {path.name}: {duration:.1f}s exceeds {max_duration:g}s limit")
+                self._move_non_live_photo(path, duration, result)
                 continue
             kept.append(path)
         return kept
+
+    def _move_non_live_photo(self, path: Path, duration: float, result: LivePhotoResult) -> None:
+        cfg = self._config
+        try:
+            try:
+                relative = path.relative_to(cfg.input_folder)
+            except ValueError:
+                relative = Path(path.name)
+
+            destination = cfg.output_folder / "no_livephoto" / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+
+            if destination.exists():
+                if cfg.skip_existing:
+                    result.skipped += 1
+                    self.log.emit(
+                        f"[SKIP] {path.name}: no_livephoto target already exists ({duration:.1f}s)"
+                    )
+                    return
+                if destination.is_file():
+                    destination.unlink()
+                else:
+                    raise RuntimeError(f"destination exists and is not a file: {destination}")
+
+            shutil.move(str(path), str(destination))
+            result.skipped += 1
+            self.log.emit(
+                f"[MOVE] {path.name}: {duration:.1f}s exceeds {cfg.max_duration_seconds:g}s limit -> no_livephoto"
+            )
+        except Exception as exc:  # noqa: BLE001
+            result.failed += 1
+            result.errors.append(f"{path.name}: failed to move to no_livephoto: {exc}")
+            self.log.emit(f"[FAIL] {path.name}: failed to move to no_livephoto: {exc}")
 
     def _convert_single(
         self,

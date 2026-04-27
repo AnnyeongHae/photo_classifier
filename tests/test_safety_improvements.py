@@ -99,7 +99,7 @@ class SafetyImprovementTests(unittest.TestCase):
 
             self.assertEqual(names, ["a.MOV", "b.mp4", "c.M4V", "d.3gp", "e.3G2"])
 
-    def test_live_photo_worker_filters_out_long_videos(self):
+    def test_live_photo_worker_moves_long_videos_to_no_livephoto(self):
         class FakeExtractor:
             def get_video_info(self, path):
                 return {"duration_seconds": 12.0 if path.name == "long.MOV" else 3.0}
@@ -123,6 +123,8 @@ class SafetyImprovementTests(unittest.TestCase):
 
             self.assertEqual([path.name for path in kept], ["short.MOV"])
             self.assertEqual(result.skipped, 1)
+            self.assertFalse(long.exists())
+            self.assertTrue((root / "out" / "no_livephoto" / "long.MOV").exists())
 
 
 if __name__ == "__main__":

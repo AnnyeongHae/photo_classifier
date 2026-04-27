@@ -164,14 +164,14 @@ class LivePhotoSetupScreen(QWidget):
 
         self._duration_spin = QSpinBox()
         self._duration_spin.setRange(1, 120)
-        self._duration_spin.setValue(10)
+        self._duration_spin.setValue(6)
         self._duration_spin.setSuffix("초")
         self._duration_spin.setStyleSheet(
             "QSpinBox { border: 1.5px solid #d1d5db; border-radius: 6px; padding: 5px 10px;"
             " font-size: 13px; color: #111827; background: #f9fafb; min-height: 36px; }"
         )
         out_layout.addRow(_flabel("최대 영상 길이"), self._duration_spin)
-        out_layout.addRow("", _hint("짧은 영상만 처리합니다. DNG/RAW 정지 이미지는 여기서 제외됩니다."))
+        out_layout.addRow("", _hint("이 길이를 넘는 영상은 출력 폴더의 no_livephoto 폴더로 이동합니다."))
         root.addWidget(out_group)
 
         meta_group = QGroupBox("메타데이터 설정")
