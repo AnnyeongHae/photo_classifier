@@ -13,6 +13,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _subprocess_no_window_kwargs() -> dict:
+    """Return subprocess options that suppress console windows on Windows."""
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 class MetadataHandler:
     """Handles metadata extraction and preservation from Live Photos."""
     
@@ -84,7 +91,8 @@ class MetadataHandler:
                 [self.exiftool_path, "-j", str(video_path)],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
+                **_subprocess_no_window_kwargs(),
             )
             
             metadata_list = json.loads(result.stdout)
@@ -196,7 +204,12 @@ class MetadataHandler:
 
             cmd.append(str(target_image))
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                **_subprocess_no_window_kwargs(),
+            )
 
             if result.returncode != 0:
                 logger.warning(f"exiftool error (rc={result.returncode}): {result.stderr.strip()}")
