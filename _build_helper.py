@@ -14,11 +14,13 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
-ASSETS_DIR  = PROJECT_DIR / "assets"
-DIST_DIR    = PROJECT_DIR / "dist"
-APP_DIST    = DIST_DIR / "app.dist"
+ASSETS_DIR = PROJECT_DIR / "assets"
+DIST_DIR = PROJECT_DIR / "dist"
+APP_DIST = DIST_DIR / "app.dist"
 RELEASE_DIR = PROJECT_DIR / "PhotoClassifier_Release"
-LOG_FILE    = PROJECT_DIR / "build.log"
+LOG_FILE = PROJECT_DIR / "build.log"
+EXPECTED_PYTHON = (3, 11)
+NUITKA_MODULE_CACHE_DIR = PROJECT_DIR / ".nuitka-cache" / "module-cache"
 
 
 # ── tee: write to console AND log file simultaneously ─────────────────────────
@@ -26,7 +28,7 @@ LOG_FILE    = PROJECT_DIR / "build.log"
 class _Tee:
     def __init__(self, original, log_file):
         self._orig = original
-        self._log  = log_file
+        self._log = log_file
 
     def write(self, s: str) -> None:
         self._orig.write(s)
@@ -59,6 +61,11 @@ def _force_remove(path: Path) -> None:
 
 def _run_streamed(cmd: list) -> int:
     """Run a subprocess and stream its output through sys.stdout (captured by tee)."""
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["NUITKA_CACHE_DIR_MODULE_CACHE"] = str(NUITKA_MODULE_CACHE_DIR)
+    env["NUITKA_ASSUME_YES_FOR_DOWNLOADS"] = "1"
     process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -67,12 +74,34 @@ def _run_streamed(cmd: list) -> int:
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        env=env,
     )
     for line in iter(process.stdout.readline, ""):
         print(line, end="", flush=True)
     process.stdout.close()
     process.wait()
     return process.returncode
+
+
+def _run_checked(cmd: list) -> int:
+    """Run a short command and print captured output."""
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    result = subprocess.run(
+        cmd,
+        cwd=PROJECT_DIR,
+        text=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+    )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="")
+    return result.returncode
 
 
 def _copy_item(label: str, src: Path, dst: Path) -> int:
@@ -97,11 +126,26 @@ def _copy_item(label: str, src: Path, dst: Path) -> int:
 
 # ── build steps ───────────────────────────────────────────────────────────────
 
+def step_check_python() -> int:
+    """[0/6] Ensure build runs from the intended Python 3.11 venv."""
+    print("[0/6] Checking Python runtime...")
+    print(f"      Python : {sys.executable}")
+    print(f"      Version: {sys.version.split()[0]}")
+    if sys.version_info[:2] != EXPECTED_PYTHON:
+        print(
+            "[ERROR] Build must run with Python 3.11. "
+            "Use build.cmd from a project folder containing venv311."
+        )
+        return 1
+    return 0
+
+
 def step_install_deps() -> int:
-    """[0/5] Install / verify build dependencies via pip."""
-    print("[0/5] Installing build dependencies...")
+    """[1/6] Install / verify runtime and build dependencies via pip."""
+    print("[1/6] Installing runtime/build dependencies...")
     rc = _run_streamed([
         sys.executable, "-m", "pip", "install",
+        "-r", str(PROJECT_DIR / "requirements-runtime.txt"),
         "-r", str(PROJECT_DIR / "requirements-build.txt"),
         "--quiet",
     ])
@@ -112,19 +156,28 @@ def step_install_deps() -> int:
     return rc
 
 
+def step_check_runtime_deps() -> int:
+    """[2/6] Verify imports before spending time building."""
+    print("[2/6] Checking runtime imports...")
+    rc = _run_checked([sys.executable, str(PROJECT_DIR / "tools" / "check_runtime_deps.py")])
+    if rc != 0:
+        print("[ERROR] Runtime dependencies are missing in the build environment.")
+    return rc
+
+
 def step_clean() -> None:
-    """[1/5] Remove dist/app.dist to avoid PermissionError on stale locked files."""
+    """[3/6] Remove dist/app.dist to avoid PermissionError on stale locked files."""
     if APP_DIST.exists():
-        print(f"[1/5] Cleaning previous build: {APP_DIST}")
+        print(f"[3/6] Cleaning previous build: {APP_DIST}")
         _force_remove(APP_DIST)
         print("      Done.")
     else:
-        print("[1/5] No previous build to clean.")
+        print("[3/6] No previous build to clean.")
 
 
 def step_check_assets() -> bool:
-    """[2/5] Verify required source assets exist before spending time building."""
-    print("[2/5] Checking assets...")
+    """[4/6] Verify required source assets exist before spending time building."""
+    print("[4/6] Checking assets...")
     ok = True
     required = [
         (ASSETS_DIR / "exiftool.exe",
@@ -147,13 +200,13 @@ def step_check_assets() -> bool:
         if (ASSETS_DIR / exe).exists() or list(ASSETS_DIR.rglob(exe)):
             print(f"      OK : assets\\{exe}")
         else:
-            print(f"[WARN] Optional asset missing: assets\\{exe} — video converter may not work")
+            print(f"[WARN] Optional asset missing: assets\\{exe} - video converter may not work")
 
     return ok
 
 
 def step_nuitka() -> int:
-    """[3/5] Run Nuitka standalone build."""
+    """[5/6] Run Nuitka standalone build."""
     # Cap at 16 to avoid RAM pressure on machines with many cores.
     jobs = min(os.cpu_count() or 4, 16)
 
@@ -161,6 +214,9 @@ def step_nuitka() -> int:
         sys.executable, "-m", "nuitka",
         "--standalone",
         "--enable-plugin=pyside6",
+        "--assume-yes-for-downloads",
+        "--disable-cache=ccache",
+        "--disable-cache=dll-dependencies",
 
         # ── Speed: LTO is the biggest time sink in standalone builds ──────────
         # Disabling cuts 30-60% off build time; runtime impact is negligible for
@@ -175,11 +231,15 @@ def step_nuitka() -> int:
         "--include-package=core",
         "--include-package=gui",
         "--include-package=workers",
+        "--include-package=LivePhotoConverter",
         "--include-package=ImageEditor",
+        "--include-package=PIL",
+        "--include-package=cv2",
+        "--include-package=numpy",
+        "--include-package=piexif",
         "--include-package=rawpy",
         "--include-package=pillow_heif",
-        # shapefile: auto-traced via `import shapefile` in core/mvp.py.
-        # LivePhotoConverter: auto-traced via explicit imports in live_photo_worker.py.
+        "--include-module=shapefile",
         # rawpy/pillow_heif: force-included because they are optional imports inside
         # try/except blocks — Nuitka's static tracer misses them.
         "--noinclude-setuptools-mode=nofollow",
@@ -196,15 +256,15 @@ def step_nuitka() -> int:
         str(PROJECT_DIR / "app.py"),
     ]
 
-    print(f"[3/5] Running Nuitka (jobs={jobs}, lto=off)...")
+    print(f"[5/6] Running Nuitka (jobs={jobs}, lto=off)...")
     print("      " + " ".join(f'"{c}"' if " " in c else c for c in cmd))
 
     return _run_streamed(cmd)
 
 
 def step_copy_assets() -> int:
-    """[4/5] Explicitly copy assets Nuitka may miss (space-in-path, .exe/.dll)."""
-    print("[4/5] Copying data assets...")
+    """[6/6] Explicitly copy assets Nuitka may miss (space-in-path, .exe/.dll)."""
+    print("[6/6] Copying data assets...")
     assets_dst = APP_DIST / "assets"
     assets_dst.mkdir(parents=True, exist_ok=True)
 
@@ -240,15 +300,15 @@ def step_copy_assets() -> int:
 
 
 def step_create_release() -> int:
-    """[5/5] Package dist into a distributable release folder."""
-    print("[5/5] Creating release package...")
+    """Package dist into a distributable release folder."""
+    print("[release] Creating release package...")
     try:
         if RELEASE_DIR.exists():
             _force_remove(RELEASE_DIR)
         RELEASE_DIR.mkdir(parents=True, exist_ok=True)
 
         bin_dir = RELEASE_DIR / "bin"
-        print("      Moving app.dist → bin/")
+        print("      Moving app.dist -> bin/")
         shutil.move(str(APP_DIST), str(bin_dir))
 
         manual = PROJECT_DIR / "사용방법.txt"
@@ -256,7 +316,7 @@ def step_create_release() -> int:
             shutil.copy2(manual, RELEASE_DIR / "사용방법.txt")
             print("      Copied 사용방법.txt")
         else:
-            print("[WARN] 사용방법.txt not found — skipping")
+            print("[WARN] 사용방법.txt not found - skipping")
 
         bat_path = RELEASE_DIR / "PhotoClassifier_실행하기.bat"
         with bat_path.open("w", encoding="euc-kr") as fp:
@@ -273,7 +333,15 @@ def step_create_release() -> int:
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def main() -> int:
+    rc = step_check_python()
+    if rc != 0:
+        return rc
+
     rc = step_install_deps()
+    if rc != 0:
+        return rc
+
+    rc = step_check_runtime_deps()
     if rc != 0:
         return rc
 
@@ -284,7 +352,7 @@ def main() -> int:
 
     rc = step_nuitka()
     if rc != 0:
-        print("[ERROR] Nuitka build failed — check build.log for the full error.")
+        print("[ERROR] Nuitka build failed - check build.log for the full error.")
         return rc
 
     rc = step_copy_assets()
@@ -305,6 +373,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     log_file = LOG_FILE.open("w", encoding="utf-8", errors="replace")
     started  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_file.write(f"=== Build started {started} ===\n\n")
