@@ -19,6 +19,7 @@ class LivePhotoConfig:
     frame_mode: str = "sharpest"     # "sharpest" | "first" | "middle"
     preserve_metadata: bool = True
     skip_existing: bool = True
+    max_duration_seconds: float = 10.0
     exiftool_path: Optional[str] = None
 
 
@@ -76,15 +77,18 @@ class LivePhotoWorker(QThread):
         else:
             self.log.emit("[INFO] metadata preservation disabled")
 
-        video_files = self._collect_video_files(cfg.input_folder)
+        candidates = self._collect_video_files(cfg.input_folder)
+        video_files = self._filter_by_duration(candidates, frame_extractor, result)
         total = len(video_files)
         if total == 0:
             supported = ", ".join(sorted(LIVE_PHOTO_VIDEO_EXTENSIONS))
-            self.log.emit(f"[WARN] no supported video files found ({supported})")
+            self.log.emit(
+                f"[WARN] no supported short video files found ({supported}, <= {cfg.max_duration_seconds:g}s)"
+            )
             self.progress.emit("No files", 0, 0)
             return result
 
-        self.log.emit(f"[INFO] found {total} video files")
+        self.log.emit(f"[INFO] found {total} short video files")
         cfg.output_folder.mkdir(parents=True, exist_ok=True)
         file_ext = ".png" if cfg.output_format == "png" else ".jpg"
 
@@ -137,6 +141,34 @@ class LivePhotoWorker(QThread):
                 seen.add(resolved)
                 video_files.append(path)
         return video_files
+
+    def _filter_by_duration(self, files: list[Path], frame_extractor, result: LivePhotoResult) -> list[Path]:
+        max_duration = self._config.max_duration_seconds
+        if max_duration <= 0:
+            return files
+
+        kept: list[Path] = []
+        for path in files:
+            try:
+                info = frame_extractor.get_video_info(path)
+            except Exception as exc:  # noqa: BLE001
+                result.failed += 1
+                result.errors.append(f"{path.name}: cannot read video duration: {exc}")
+                self.log.emit(f"[FAIL] {path.name}: cannot read video duration: {exc}")
+                continue
+
+            duration = float(info.get("duration_seconds") or 0)
+            if duration <= 0:
+                result.failed += 1
+                result.errors.append(f"{path.name}: invalid video duration")
+                self.log.emit(f"[FAIL] {path.name}: invalid video duration")
+                continue
+            if duration > max_duration:
+                result.skipped += 1
+                self.log.emit(f"[SKIP] {path.name}: {duration:.1f}s exceeds {max_duration:g}s limit")
+                continue
+            kept.append(path)
+        return kept
 
     def _convert_single(
         self,

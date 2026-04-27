@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -160,6 +161,17 @@ class LivePhotoSetupScreen(QWidget):
         self._frame_cb.setStyleSheet(COMBO_STYLE)
         out_layout.addRow(_flabel("Frame"), self._frame_cb)
         out_layout.addRow("", _hint("Sharpest mode samples the clip and picks the clearest frame."))
+
+        self._duration_spin = QSpinBox()
+        self._duration_spin.setRange(1, 120)
+        self._duration_spin.setValue(10)
+        self._duration_spin.setSuffix(" sec")
+        self._duration_spin.setStyleSheet(
+            "QSpinBox { border: 1.5px solid #d1d5db; border-radius: 6px; padding: 5px 10px;"
+            " font-size: 13px; color: #111827; background: #f9fafb; min-height: 36px; }"
+        )
+        out_layout.addRow(_flabel("Max clip length"), self._duration_spin)
+        out_layout.addRow("", _hint("Only short clips are processed. DNG/RAW still images are ignored here."))
         root.addWidget(out_group)
 
         meta_group = QGroupBox("Metadata")
@@ -265,6 +277,7 @@ class LivePhotoSetupScreen(QWidget):
             frame_mode=self._frame_cb.currentData(),
             preserve_metadata=bool(self._metadata_cb.currentData()),
             skip_existing=bool(self._skip_cb.currentData()),
+            max_duration_seconds=float(self._duration_spin.value()),
         )
 
     @property
