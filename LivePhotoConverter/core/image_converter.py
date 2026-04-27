@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 from typing import Union
+from PIL import Image
 
 
 class ImageConverter:
@@ -52,17 +53,15 @@ class ImageConverter:
         if create_dirs:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert RGB to BGR for OpenCV
-        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-
-        success = cv2.imwrite(
-            str(output_path),
-            frame_bgr,
-            [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality]
-        )
-
-        if not success:
-            raise RuntimeError(f"Failed to save JPEG: {output_path}")
+        try:
+            Image.fromarray(_as_uint8_rgb(frame_rgb), mode="RGB").save(
+                output_path,
+                format="JPEG",
+                quality=self.jpeg_quality,
+                optimize=True,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Failed to save JPEG: {output_path}") from exc
 
         return output_path
     
@@ -104,17 +103,14 @@ class ImageConverter:
         if create_dirs:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert RGB to BGR for OpenCV
-        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
-
-        success = cv2.imwrite(
-            str(output_path),
-            frame_bgr,
-            [cv2.IMWRITE_PNG_COMPRESSION, compression]
-        )
-
-        if not success:
-            raise RuntimeError(f"Failed to save PNG: {output_path}")
+        try:
+            Image.fromarray(_as_uint8_rgb(frame_rgb), mode="RGB").save(
+                output_path,
+                format="PNG",
+                compress_level=compression,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Failed to save PNG: {output_path}") from exc
 
         return output_path
     
@@ -199,3 +195,9 @@ class ImageConverter:
             thumbnail = frame_rgb
         
         return self.save_frame_as_jpeg(thumbnail, output_path, create_dirs)
+
+
+def _as_uint8_rgb(frame_rgb: np.ndarray) -> np.ndarray:
+    if frame_rgb.dtype == np.uint8:
+        return frame_rgb
+    return np.clip(frame_rgb, 0, 255).astype(np.uint8)

@@ -6,8 +6,12 @@ Optimized for memory efficiency (in-memory processing, no temp files).
 
 import cv2
 import numpy as np
+import os
+import shutil
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import Iterator, List, Tuple, Optional
 from .focus_detector import FocusDetector
 
 
@@ -52,11 +56,7 @@ class FrameExtractor:
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
         
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            raise RuntimeError(f"Cannot open video file: {video_path}")
-        
-        try:
+        with _open_video_capture(video_path) as cap:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             if total_frames == 0:
                 raise RuntimeError(f"Video has no frames: {video_path}")
@@ -140,9 +140,6 @@ class FrameExtractor:
                 }
             
             return frames, metadata
-        
-        finally:
-            cap.release()
     
     def extract_frame_at_index(self, video_path: str | Path, frame_index: int) -> np.ndarray:
         """
@@ -159,11 +156,7 @@ class FrameExtractor:
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
         
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            raise RuntimeError(f"Cannot open video file: {video_path}")
-        
-        try:
+        with _open_video_capture(video_path) as cap:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             if frame_index < 0 or frame_index >= total_frames:
                 raise ValueError(f"Frame index {frame_index} out of range [0, {total_frames-1}]")
@@ -175,9 +168,6 @@ class FrameExtractor:
                 raise RuntimeError(f"Failed to extract frame at index {frame_index}")
             
             return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        finally:
-            cap.release()
     
     def get_video_info(self, video_path: str | Path) -> dict:
         """
@@ -193,11 +183,7 @@ class FrameExtractor:
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
         
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            raise RuntimeError(f"Cannot open video file: {video_path}")
-        
-        try:
+        with _open_video_capture(video_path) as cap:
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv2.CAP_PROP_FPS)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -213,6 +199,34 @@ class FrameExtractor:
                 "height": height,
                 "duration_seconds": duration_seconds
             }
-        
-        finally:
-            cap.release()
+
+
+def _needs_ascii_temp_path(path: Path) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        str(path).encode("ascii")
+        return False
+    except UnicodeEncodeError:
+        return True
+
+
+@contextmanager
+def _open_video_capture(video_path: Path) -> Iterator[cv2.VideoCapture]:
+    capture_path = video_path
+    temp_dir: tempfile.TemporaryDirectory[str] | None = None
+
+    if _needs_ascii_temp_path(video_path):
+        temp_dir = tempfile.TemporaryDirectory(prefix="livephoto_")
+        capture_path = Path(temp_dir.name) / f"input{video_path.suffix.lower()}"
+        shutil.copy2(video_path, capture_path)
+
+    cap = cv2.VideoCapture(str(capture_path))
+    try:
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open video file: {video_path}")
+        yield cap
+    finally:
+        cap.release()
+        if temp_dir is not None:
+            temp_dir.cleanup()

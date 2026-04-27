@@ -4,9 +4,12 @@ import unittest
 import zipfile
 from pathlib import Path
 
+import numpy as np
+
 from core.archive import expand_archives
 from core.mover import move_files
 from core.video_converter import ProcessRegistry, _resolve_output_path
+from LivePhotoConverter.core.image_converter import ImageConverter
 from workers.live_photo_worker import LivePhotoConfig, LivePhotoResult, LivePhotoWorker
 
 
@@ -125,6 +128,19 @@ class SafetyImprovementTests(unittest.TestCase):
             self.assertEqual(result.skipped, 1)
             self.assertFalse(long.exists())
             self.assertTrue((root / "out" / "no_livephoto" / "long.MOV").exists())
+
+    def test_live_photo_image_converter_saves_to_unicode_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "라이브포토 결과 !@#"
+            frame = np.zeros((8, 8, 3), dtype=np.uint8)
+            frame[:, :, 0] = 255
+            converter = ImageConverter(jpeg_quality=95)
+
+            jpg = converter.save_frame_as_jpeg(frame, output / "썸네일.jpg")
+            png = converter.save_frame_as_png(frame, output / "썸네일.png")
+
+            self.assertTrue(jpg.exists())
+            self.assertTrue(png.exists())
 
 
 if __name__ == "__main__":
