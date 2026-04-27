@@ -72,6 +72,7 @@ classified_output/
 # 설명: 변환된 이미지 (원본에서 재생성 가능)
 LivePhotoConverter/test_output*/
 PhotoClassifier_Release/
+PhotoClassifier_Release_cmd/
 PhotoTagging_QWEN2.5VL/
 
 # ── 데이터베이스 ────────────────────────────────────────────────────────────

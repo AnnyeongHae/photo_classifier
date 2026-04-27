@@ -18,7 +18,7 @@ def run() -> int:
     setup_logger("photo_classifier", log_dir=log_dir)
     
     app = QApplication(sys.argv)
-    app.setApplicationName("Photo Classifier")
+    app.setApplicationName("사진/영상 분류기")
     app.setOrganizationName("PhotoClassifier")
 
     # Crisp rendering on high-DPI displays

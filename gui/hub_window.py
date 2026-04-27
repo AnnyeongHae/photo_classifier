@@ -19,7 +19,7 @@ from gui.video_window import VideoWindow
 class HubWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Media Pipeline Hub")
+        self.setWindowTitle("미디어 파이프라인 허브")
         self.setMinimumSize(1180, 560)
         self.resize(1320, 620)
 
@@ -39,11 +39,11 @@ class HubWindow(QMainWindow):
         root.setContentsMargins(36, 32, 36, 32)
         root.setSpacing(24)
 
-        title = QLabel("Media Management Hub")
+        title = QLabel("미디어 관리 허브")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("font-size: 28px; font-weight: 800; color: #111827;")
 
-        subtitle = QLabel("Choose a workflow")
+        subtitle = QLabel("사용할 작업을 선택하세요")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet("font-size: 14px; color: #4b5563;")
 
@@ -55,26 +55,26 @@ class HubWindow(QMainWindow):
         buttons_layout.addStretch()
 
         btn_classifier = self._tool_button(
-            "Photo Organizer",
-            "Sort photos and videos into country/city folders using GPS metadata.",
+            "사진/영상 분류기",
+            "GPS 메타데이터를 기준으로 국가/도시 폴더에 정리합니다.",
             "#2563eb",
             "#1d4ed8",
         )
         btn_video = self._tool_button(
-            "Video Converter",
-            "Downscale large videos while preserving metadata.",
+            "영상 해상도 변환기",
+            "메타데이터를 보존하면서 큰 영상을 낮은 해상도로 변환합니다.",
             "#059669",
             "#047857",
         )
         btn_live = self._tool_button(
-            "Live Photo Converter",
-            "Extract a still image from Live Photo video files.",
+            "라이브 포토 변환기",
+            "Live Photo 영상 파일에서 정지 이미지를 추출합니다.",
             "#7c3aed",
             "#6d28d9",
         )
         btn_editor = self._tool_button(
-            "Image Batch Editor",
-            "Batch resize, crop, convert formats, and preserve EXIF.",
+            "이미지 일괄 편집기",
+            "이미지 크기 조절, 자르기, 포맷 변환, EXIF 보존을 일괄 처리합니다.",
             "#d97706",
             "#b45309",
         )

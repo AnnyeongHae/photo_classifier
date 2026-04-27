@@ -95,13 +95,13 @@ class LivePhotoSetupScreen(QWidget):
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
 
-        title = QLabel("Live Photo Converter")
+        title = QLabel("라이브 포토 변환기")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("font-size: 26px; font-weight: 800; color: #111827; background: transparent;")
         root.addWidget(title)
 
         ext_list = ", ".join(sorted(ext.upper() for ext in LIVE_PHOTO_VIDEO_EXTENSIONS))
-        subtitle = QLabel(f"Extract a still image from Live Photo video files ({ext_list}).")
+        subtitle = QLabel(f"Live Photo 영상 파일({ext_list})에서 정지 이미지를 추출합니다.")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet("font-size: 13px; color: #374151; background: transparent; margin-bottom: 8px;")
         root.addWidget(subtitle)
@@ -110,7 +110,7 @@ class LivePhotoSetupScreen(QWidget):
         self._exif_card.setFixedHeight(52)
         exif_layout = QHBoxLayout(self._exif_card)
         exif_layout.setContentsMargins(20, 0, 20, 0)
-        self._exif_label = QLabel("Checking exiftool...")
+        self._exif_label = QLabel("exiftool 확인 중...")
         self._exif_label.setAlignment(Qt.AlignCenter)
         self._exif_label.setStyleSheet(
             "font-size: 14px; font-weight: 700; color: #166534; background: transparent; border: none;"
@@ -118,19 +118,19 @@ class LivePhotoSetupScreen(QWidget):
         exif_layout.addWidget(self._exif_label)
         root.addWidget(self._exif_card)
 
-        folder_group = QGroupBox("Folders")
+        folder_group = QGroupBox("파일 경로")
         folder_group.setStyleSheet(GROUPBOX_STYLE)
         folder_layout = QVBoxLayout(folder_group)
         folder_layout.setSpacing(10)
         folder_layout.setContentsMargins(20, 16, 20, 20)
 
-        self._input_row = FolderRow("Input", "Folder containing Live Photo video files")
-        self._output_row = FolderRow("Output", "Folder where extracted images will be saved")
+        self._input_row = FolderRow("입력 폴더", "Live Photo 영상 파일이 있는 폴더 선택")
+        self._output_row = FolderRow("출력 폴더", "추출된 이미지가 저장될 폴더 선택")
         folder_layout.addWidget(self._input_row)
         folder_layout.addWidget(self._output_row)
         root.addWidget(folder_group)
 
-        out_group = QGroupBox("Output")
+        out_group = QGroupBox("출력 설정")
         out_group.setStyleSheet(GROUPBOX_STYLE)
         out_layout = QFormLayout(out_group)
         out_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -139,42 +139,42 @@ class LivePhotoSetupScreen(QWidget):
         out_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
 
         self._format_cb = QComboBox()
-        self._format_cb.addItem("JPEG - best compatibility, EXIF friendly", "jpg")
-        self._format_cb.addItem("PNG - lossless frame output", "png")
+        self._format_cb.addItem("JPEG - 호환성 좋음, EXIF 보존에 유리", "jpg")
+        self._format_cb.addItem("PNG - 무손실 프레임 출력", "png")
         self._format_cb.setStyleSheet(COMBO_STYLE)
         self._format_cb.currentIndexChanged.connect(self._on_format_changed)
-        out_layout.addRow(_flabel("Image format"), self._format_cb)
-        out_layout.addRow("", _hint("JPEG is recommended when you want GPS/date/camera metadata preserved."))
+        out_layout.addRow(_flabel("이미지 포맷"), self._format_cb)
+        out_layout.addRow("", _hint("GPS/날짜/카메라 메타데이터 보존이 필요하면 JPEG를 권장합니다."))
 
         self._quality_cb = QComboBox()
-        self._quality_cb.addItem("95 - high quality", 95)
-        self._quality_cb.addItem("100 - maximum quality", 100)
-        self._quality_cb.addItem("85 - balanced size", 85)
+        self._quality_cb.addItem("95 - 고화질", 95)
+        self._quality_cb.addItem("100 - 최고 품질", 100)
+        self._quality_cb.addItem("85 - 용량 균형", 85)
         self._quality_cb.setStyleSheet(COMBO_STYLE)
-        self._quality_row_label = _flabel("JPEG quality")
+        self._quality_row_label = _flabel("JPEG 품질")
         out_layout.addRow(self._quality_row_label, self._quality_cb)
 
         self._frame_cb = QComboBox()
-        self._frame_cb.addItem("Sharpest frame - recommended", "sharpest")
-        self._frame_cb.addItem("First frame", "first")
-        self._frame_cb.addItem("Middle frame", "middle")
+        self._frame_cb.addItem("최선명 프레임 - 권장", "sharpest")
+        self._frame_cb.addItem("첫 프레임", "first")
+        self._frame_cb.addItem("중간 프레임", "middle")
         self._frame_cb.setStyleSheet(COMBO_STYLE)
-        out_layout.addRow(_flabel("Frame"), self._frame_cb)
-        out_layout.addRow("", _hint("Sharpest mode samples the clip and picks the clearest frame."))
+        out_layout.addRow(_flabel("프레임"), self._frame_cb)
+        out_layout.addRow("", _hint("최선명 모드는 영상을 샘플링해 가장 선명한 프레임을 선택합니다."))
 
         self._duration_spin = QSpinBox()
         self._duration_spin.setRange(1, 120)
         self._duration_spin.setValue(10)
-        self._duration_spin.setSuffix(" sec")
+        self._duration_spin.setSuffix("초")
         self._duration_spin.setStyleSheet(
             "QSpinBox { border: 1.5px solid #d1d5db; border-radius: 6px; padding: 5px 10px;"
             " font-size: 13px; color: #111827; background: #f9fafb; min-height: 36px; }"
         )
-        out_layout.addRow(_flabel("Max clip length"), self._duration_spin)
-        out_layout.addRow("", _hint("Only short clips are processed. DNG/RAW still images are ignored here."))
+        out_layout.addRow(_flabel("최대 영상 길이"), self._duration_spin)
+        out_layout.addRow("", _hint("짧은 영상만 처리합니다. DNG/RAW 정지 이미지는 여기서 제외됩니다."))
         root.addWidget(out_group)
 
-        meta_group = QGroupBox("Metadata")
+        meta_group = QGroupBox("메타데이터 설정")
         meta_group.setStyleSheet(GROUPBOX_STYLE)
         meta_layout = QFormLayout(meta_group)
         meta_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -182,16 +182,16 @@ class LivePhotoSetupScreen(QWidget):
         meta_layout.setSpacing(10)
 
         self._metadata_cb = QComboBox()
-        self._metadata_cb.addItem("Preserve EXIF/GPS/date metadata", True)
-        self._metadata_cb.addItem("Do not copy metadata", False)
+        self._metadata_cb.addItem("EXIF/GPS/날짜 메타데이터 보존", True)
+        self._metadata_cb.addItem("메타데이터 복사 안 함", False)
         self._metadata_cb.setStyleSheet(COMBO_STYLE)
         meta_layout.addRow(_flabel("EXIF"), self._metadata_cb)
 
         self._skip_cb = QComboBox()
-        self._skip_cb.addItem("Skip existing output files", True)
-        self._skip_cb.addItem("Overwrite existing output files", False)
+        self._skip_cb.addItem("기존 출력 파일 건너뛰기", True)
+        self._skip_cb.addItem("기존 출력 파일 덮어쓰기", False)
         self._skip_cb.setStyleSheet(COMBO_STYLE)
-        meta_layout.addRow(_flabel("Duplicates"), self._skip_cb)
+        meta_layout.addRow(_flabel("중복 파일"), self._skip_cb)
         root.addWidget(meta_group)
 
         self._deps_label = QLabel()
@@ -206,7 +206,7 @@ class LivePhotoSetupScreen(QWidget):
         footer_layout.setContentsMargins(40, 16, 40, 16)
         footer_layout.setSpacing(8)
 
-        self._run_btn = QPushButton("Start Conversion")
+        self._run_btn = QPushButton("변환 시작")
         self._run_btn.setFixedHeight(52)
         self._run_btn.setCursor(Qt.PointingHandCursor)
         self._run_btn.setStyleSheet(
@@ -217,7 +217,7 @@ class LivePhotoSetupScreen(QWidget):
         )
         footer_layout.addWidget(self._run_btn)
 
-        self._back_btn = QPushButton("Back to Hub")
+        self._back_btn = QPushButton("← 허브로 돌아가기")
         self._back_btn.setCursor(Qt.PointingHandCursor)
         self._back_btn.setStyleSheet(
             "QPushButton { color: #374151; font-size: 13px; font-weight: 600;"
@@ -239,32 +239,32 @@ class LivePhotoSetupScreen(QWidget):
             from LivePhotoConverter.core.metadata_handler import MetadataHandler
 
             MetadataHandler()
-            self._exif_label.setText("exiftool found - metadata preservation is available")
+            self._exif_label.setText("exiftool 감지됨 - 메타데이터 보존 사용 가능")
             self._exif_card.setStyleSheet(
                 "QFrame { background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; }"
             )
-            self._deps_label.setText("exiftool loaded successfully")
+            self._deps_label.setText("exiftool 정상 로드됨")
             self._deps_label.setStyleSheet("color: #10b981; font-weight: 700; font-size: 12px;")
         except FileNotFoundError:
-            self._exif_label.setText("exiftool not found - metadata preservation will be limited")
+            self._exif_label.setText("exiftool 없음 - 메타데이터 보존이 제한됩니다")
             self._exif_label.setStyleSheet(
                 "font-size: 14px; font-weight: 700; color: #92400e; background: transparent; border: none;"
             )
             self._exif_card.setStyleSheet(
                 "QFrame { background: #fffbeb; border: 1.5px solid #fde68a; border-radius: 8px; }"
             )
-            self._deps_label.setText("Place exiftool in assets or add it to PATH.")
+            self._deps_label.setText("exiftool을 assets 폴더에 넣거나 PATH에 추가해 주세요.")
             self._deps_label.setStyleSheet("color: #f59e0b; font-weight: 700; font-size: 12px;")
 
     def validate(self) -> bool:
         if not self._input_row.path:
-            QMessageBox.warning(self, "Missing Input", "Select an input folder.")
+            QMessageBox.warning(self, "입력 폴더 없음", "입력 폴더를 선택해 주세요.")
             return False
         if not Path(self._input_row.path).is_dir():
-            QMessageBox.warning(self, "Input Not Found", "The selected input folder does not exist.")
+            QMessageBox.warning(self, "입력 폴더 없음", "선택한 입력 폴더가 존재하지 않습니다.")
             return False
         if not self._output_row.path:
-            QMessageBox.warning(self, "Missing Output", "Select an output folder.")
+            QMessageBox.warning(self, "출력 폴더 없음", "출력 폴더를 선택해 주세요.")
             return False
         return True
 

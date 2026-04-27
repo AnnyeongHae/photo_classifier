@@ -15,7 +15,7 @@ SCREEN_SUMMARY = 2
 class LivePhotoWindow(QMainWindow):
     def __init__(self, on_back_to_hub=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Live Photo Converter")
+        self.setWindowTitle("라이브 포토 변환기")
         self.setMinimumSize(780, 640)
         self.resize(860, 720)
 
@@ -85,7 +85,7 @@ class LivePhotoWindow(QMainWindow):
     def _on_finished(self, result: LivePhotoResult) -> None:
         self._worker = None
         if result.cancelled:
-            QMessageBox.information(self, "Cancelled", "Conversion was cancelled.")
+            QMessageBox.information(self, "취소됨", "변환이 취소되었습니다.")
             self._stack.setCurrentIndex(SCREEN_SETUP)
             return
         self._summary_screen.load_result(result)
@@ -94,15 +94,15 @@ class LivePhotoWindow(QMainWindow):
     @Slot(str)
     def _on_error(self, message: str) -> None:
         self._worker = None
-        QMessageBox.critical(self, "Error", f"Conversion failed:\n\n{message}")
+        QMessageBox.critical(self, "오류", f"변환 중 오류가 발생했습니다:\n\n{message}")
         self._stack.setCurrentIndex(SCREEN_SETUP)
 
     def closeEvent(self, event) -> None:
         if self._worker and self._worker.isRunning():
             reply = QMessageBox.question(
                 self,
-                "Confirm Exit",
-                "A conversion is running. Exit anyway?",
+                "종료 확인",
+                "변환이 진행 중입니다. 그래도 종료할까요?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )

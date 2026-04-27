@@ -44,7 +44,7 @@ def _resolve_db_path(output_folder: Path) -> Path:
 class MainWindow(QMainWindow):
     def __init__(self, on_back_to_hub=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Photo Classifier")
+        self.setWindowTitle("사진/영상 분류기")
         self.setMinimumSize(820, 620)
         self.resize(860, 660)
 
@@ -82,9 +82,9 @@ class MainWindow(QMainWindow):
 
         if not resolve_exiftool_path():
             issues.append(
-                "ExifTool was not found.\n"
-                "- Set path directly in the setup screen, or\n"
-                "- Place assets/exiftool.exe in the app folder."
+                "ExifTool을 찾지 못했습니다.\n"
+                "- 설정 화면에서 경로를 직접 지정하거나\n"
+                "- 앱 폴더의 assets/exiftool.exe 위치에 파일을 넣어 주세요."
             )
 
         assets_dir = _resolve_assets_dir()
@@ -92,13 +92,13 @@ class MainWindow(QMainWindow):
         cities_csv = assets_dir / "my_cities.csv"
 
         if not shapefile.exists():
-            issues.append(f"Shapefile missing:\n{shapefile}")
+            issues.append(f"Shapefile 파일이 없습니다:\n{shapefile}")
         if not cities_csv.exists():
-            issues.append(f"City CSV missing:\n{cities_csv}")
+            issues.append(f"도시 CSV 파일이 없습니다:\n{cities_csv}")
 
         if issues:
-            body = "Some required files are missing. The pipeline may fail.\n\n" + "\n\n".join(issues)
-            QMessageBox.warning(self, "Startup Check", body)
+            body = "필수 파일 일부가 없어 분류 작업이 실패할 수 있습니다.\n\n" + "\n\n".join(issues)
+            QMessageBox.warning(self, "시작 전 확인", body)
 
     def _go_setup(self) -> None:
         self._stack.setCurrentIndex(_SCREEN_SETUP)
@@ -138,7 +138,7 @@ class MainWindow(QMainWindow):
     def _on_finished(self, result: PipelineResult) -> None:
         self._worker = None
         if result.cancelled:
-            QMessageBox.information(self, "Cancelled", "Pipeline was cancelled.")
+            QMessageBox.information(self, "취소됨", "분류 작업이 취소되었습니다.")
             self._stack.setCurrentIndex(_SCREEN_SETUP)
             return
         self._summary_screen.load_result(result)
@@ -147,15 +147,15 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_error(self, message: str) -> None:
         self._worker = None
-        QMessageBox.critical(self, "Error", f"Pipeline failed:\n\n{message}")
+        QMessageBox.critical(self, "오류", f"분류 작업이 실패했습니다:\n\n{message}")
         self._stack.setCurrentIndex(_SCREEN_SETUP)
 
     def closeEvent(self, event) -> None:
         if self._worker and self._worker.isRunning():
             reply = QMessageBox.question(
                 self,
-                "Confirm Exit",
-                "A job is running. Exit anyway?",
+                "종료 확인",
+                "작업이 진행 중입니다. 그래도 종료할까요?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )

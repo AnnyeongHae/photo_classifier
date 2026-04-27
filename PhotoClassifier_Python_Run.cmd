@@ -15,7 +15,7 @@ if not exist "%PYTHON_EXE%" (
     exit /b 1
 )
 
-"%PYTHON_EXE%" -c "import PySide6, PIL, pillow_heif, shapefile, cv2, numpy, rawpy" > nul 2> nul
+"%PYTHON_EXE%" "%~dp0tools\check_runtime_deps.py"
 if not "%ERRORLEVEL%"=="0" (
     echo [ERROR] Runtime dependencies are missing.
     echo.
