@@ -15,6 +15,23 @@ from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
+def _safe_member_path(base_dir: Path, member_name: str) -> Optional[Path]:
+    """Return a safe extraction path, or None for unsafe ZIP members."""
+    normalized = member_name.replace("\\", "/")
+    member_path = Path(normalized)
+    if member_path.is_absolute() or ".." in member_path.parts:
+        return None
+
+    target = (base_dir / member_path).resolve()
+    base = base_dir.resolve()
+    try:
+        target.relative_to(base)
+    except ValueError:
+        return None
+    return target
+
+
 def expand_archives(
     input_folder: Path,
     cancel_flag: Optional[threading.Event] = None,
@@ -81,9 +98,16 @@ def expand_archives(
                     if zinfo.is_dir():
                         continue
                         
-                    ext = Path(zinfo.filename).suffix.lower()
+                    target_path = _safe_member_path(target_subfolder, zinfo.filename)
+                    if target_path is None:
+                        logger.warning(f"Skipping unsafe ZIP member: {zinfo.filename}")
+                        continue
+
+                    ext = target_path.suffix.lower()
                     if ext in SUPPORTED_EXTENSIONS:
-                        zf.extract(zinfo, path=target_subfolder)
+                        target_path.parent.mkdir(parents=True, exist_ok=True)
+                        with zf.open(zinfo) as src, target_path.open("wb") as dst:
+                            shutil.copyfileobj(src, dst)
                         extracted_count += 1
                         
             # Move the original ZIP to _Processed_ZIPs

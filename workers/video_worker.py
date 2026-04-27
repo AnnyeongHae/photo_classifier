@@ -2,7 +2,7 @@
 import threading
 from PySide6.QtCore import QThread, Signal
 
-from core.video_converter import VideoConverterConfig, VideoConverterResult, run_video_conversion
+from core.video_converter import ProcessRegistry, VideoConverterConfig, VideoConverterResult, run_video_conversion
 
 class VideoWorker(QThread):
     max_concurrent_updated = Signal(int)  # Emitted when max concurrent is determined
@@ -18,14 +18,22 @@ class VideoWorker(QThread):
         self._config = config
         self._cancel_flag = threading.Event()
         self.active_process = None
+        self._process_registry = ProcessRegistry()
 
     def cancel(self) -> None:
         self._cancel_flag.set()
+        self._process_registry.terminate_all()
         if self.active_process:
             try:
                 self.active_process.terminate()
             except Exception:
                 pass
+
+    def register_process(self, process) -> None:
+        self._process_registry.register(process)
+
+    def unregister_process(self, process) -> None:
+        self._process_registry.unregister(process)
 
     def run(self) -> None:
         def progress_cb(step: str, done: int, total: int, stats: dict = None) -> None:

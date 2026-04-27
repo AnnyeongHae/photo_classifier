@@ -162,6 +162,33 @@ class ThreadSafeStats:
         with self._lock:
             return self._stats.get(key, default)
 
+
+class ProcessRegistry:
+    """Tracks concurrently running subprocesses so cancellation reaches all of them."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._processes = set()
+
+    def register(self, process: subprocess.Popen) -> None:
+        with self._lock:
+            self._processes.add(process)
+
+    def unregister(self, process: subprocess.Popen) -> None:
+        with self._lock:
+            self._processes.discard(process)
+
+    def terminate_all(self) -> None:
+        with self._lock:
+            processes = list(self._processes)
+        for process in processes:
+            if process.poll() is not None:
+                continue
+            try:
+                process.terminate()
+            except Exception:
+                logger.debug("Failed to terminate ffmpeg process", exc_info=True)
+
 def _try_encoder(ffmpeg_path: str, enc: str, cmd: list, test_file: Path) -> tuple[bool, str]:
     """Run one encoder test command. Returns (success, stderr_snippet)."""
     try:
@@ -279,15 +306,21 @@ class VideoConverterResult:
         self.failed = 0
         self.cancelled = False
 
-def _resolve_output_path(original_path: Path, output_folder: Path, max_attempts: int = DEFAULT_FILENAME_CONFLICT_ATTEMPTS) -> Path:
+def _resolve_output_path(
+    original_path: Path,
+    output_folder: Path,
+    max_attempts: int = DEFAULT_FILENAME_CONFLICT_ATTEMPTS,
+    reserved_paths: Optional[set] = None,
+) -> Path:
     """Resolve output path, handling filename conflicts."""
     out_path = output_folder / original_path.name
-    if not out_path.exists():
+    reserved_paths = reserved_paths if reserved_paths is not None else set()
+    if not out_path.exists() and out_path not in reserved_paths:
         return out_path
     
     for idx in range(1, max_attempts):
         out_path = output_folder / f"{original_path.stem}_{idx}{original_path.suffix}"
-        if not out_path.exists():
+        if not out_path.exists() and out_path not in reserved_paths:
             return out_path
     
     logger.warning(f"Exceeded {max_attempts} attempts to find unique filename for {original_path.name}")
@@ -355,7 +388,9 @@ def _run_encode_pass(
         encoding='utf-8', errors='replace'
     )
     
-    if worker_context:
+    if worker_context and hasattr(worker_context, "register_process"):
+        worker_context.register_process(process)
+    elif worker_context:
         worker_context.active_process = process
     
     err_log = []
@@ -389,7 +424,9 @@ def _run_encode_pass(
                         if stats:
                             stats.set("_current_pct", pct)
     finally:
-        if worker_context:
+        if worker_context and hasattr(worker_context, "unregister_process"):
+            worker_context.unregister_process(process)
+        elif worker_context:
             worker_context.active_process = None
     
     retcode = process.poll() if process.poll() is not None else -1
@@ -509,6 +546,7 @@ def run_video_conversion(
         slot_queue.put(_s)
 
     # Parallel conversion using ThreadPoolExecutor
+    reserved_output_paths = set()
     with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
         futures_to_index = {}
         completed_count = 0
@@ -522,7 +560,12 @@ def run_video_conversion(
             if config.duplicate_handling == "overwrite":
                 out_path = config.output_folder / file_path.name
             else:
-                out_path = _resolve_output_path(file_path, config.output_folder)
+                out_path = _resolve_output_path(
+                    file_path,
+                    config.output_folder,
+                    reserved_paths=reserved_output_paths,
+                )
+            reserved_output_paths.add(out_path)
 
             scale_filter = f"scale={config.max_width}:{config.max_height}:force_original_aspect_ratio=decrease"
             duration = get_video_duration(ffprobe_path, file_path)

@@ -6,6 +6,7 @@ Wraps core.file_moving functions with a progress callback interface.
 import os
 import shutil
 import threading
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -31,6 +32,7 @@ class MoveStats:
     overwritten: int = 0
     renamed: int = 0
     failed_verify: int = 0
+    copied_only: int = 0
 
     @property
     def success(self) -> int:
@@ -45,6 +47,7 @@ def move_files(
     rows: List[dict],
     duplicate_policy: str = "rename",
     only_success: bool = False,
+    remove_source: bool = True,
     cancel_flag: Optional[threading.Event] = None,
     progress_cb: Optional[Callable[[int, int, "MoveStats"], None]] = None,
 ) -> MoveStats:
@@ -86,7 +89,7 @@ def move_files(
                             stats.renamed += 1
 
                     dest.parent.mkdir(parents=True, exist_ok=True)
-                    temp_dest = dest.with_name(f".tmp_{dest.name}_{os.getpid()}")
+                    temp_dest = dest.with_name(f".tmp_{dest.name}_{os.getpid()}_{uuid.uuid4().hex}")
                     
                     logger.debug(f"Copying {src} to {temp_dest}")
                     shutil.copy2(src, temp_dest)
@@ -104,8 +107,11 @@ def move_files(
                             requested_dest.unlink()
                             stats.overwritten += 1
                         temp_dest.replace(dest)
-                        src.unlink()
-                        stats.removed += 1
+                        if remove_source:
+                            src.unlink()
+                            stats.removed += 1
+                        else:
+                            stats.copied_only += 1
                         logger.debug(f"Successfully moved {src} to {dest}")
                 
                 except Exception as e:
