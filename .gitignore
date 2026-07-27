@@ -49,6 +49,9 @@ root_recursive_*.csv
 move_plan*.csv
 classified_output/
 PhotoClassifier_Release/
+PhotoClassifier_Release_cmd/
+PhotoTagging_QWEN2.5VL/
+
 
 # ── 테스트 / 출력 데이터 ─────────────────────────────────────────────────────
 other/
