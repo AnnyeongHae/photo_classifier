@@ -308,7 +308,10 @@ def extract_metadata(
                     raw_records.extend(et.execute(chunk))
                 except Exception as e:
                     # Dead-letter skip if this specific chunk crashes ExifTool
-                    pass
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"ExifTool chunk {i}–{i+len(chunk)-1} failed: {e}"
+                    )
                 done += len(chunk)
                 if progress_cb:
                     progress_cb(done, total)
@@ -324,8 +327,11 @@ def extract_metadata(
             chunk = supported_files[i : i + chunk_size]
             try:
                 raw_records.extend(_run_chunk_fallback(exiftool_path, chunk))
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"ExifTool fallback chunk {i}–{i+len(chunk)-1} failed: {e}"
+                )
             done += len(chunk)
             if progress_cb:
                 progress_cb(done, total)

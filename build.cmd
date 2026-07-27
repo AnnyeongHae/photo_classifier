@@ -14,16 +14,31 @@ setlocal
 
 cd /d "%~dp0"
 
-pip install -r requirements-build.txt --quiet
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] pip install failed. Check requirements-build.txt.
-    endlocal
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+set "NUITKA_CACHE_DIR_MODULE_CACHE=%~dp0.nuitka-cache\module-cache"
+
+set "PYTHON_EXE=%~dp0venv311\Scripts\python.exe"
+
+if not exist "%PYTHON_EXE%" (
+    echo [ERROR] Build Python was not found:
+    echo         %PYTHON_EXE%
+    echo.
+    echo Create venv311 with Python 3.11 and install dependencies first:
+    echo py -3.11 -m venv venv311
+    echo "%PYTHON_EXE%" -m pip install -r requirements-runtime.txt -r requirements-build.txt
+    echo.
+    pause
     exit /b 1
 )
 
-python _build_helper.py
-set BUILD_RC=%ERRORLEVEL%
+"%PYTHON_EXE%" _build_helper.py
+set "BUILD_RC=%ERRORLEVEL%"
+
+if not "%BUILD_RC%"=="0" (
+    endlocal
+    exit /b %BUILD_RC%
+)
 
 endlocal
-if %BUILD_RC% neq 0 exit /b %BUILD_RC%
 pause

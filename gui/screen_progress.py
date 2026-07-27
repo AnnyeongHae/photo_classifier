@@ -19,9 +19,9 @@ from core.pipeline import STEP_CLASSIFY, STEP_EXTRACT, STEP_MOVE
 
 _STEP_ORDER = [STEP_EXTRACT, STEP_CLASSIFY, STEP_MOVE]
 _STEP_NAMES = {
-    STEP_EXTRACT: "Extract Metadata",
-    STEP_CLASSIFY: "Classify Country/City",
-    STEP_MOVE: "Move Files",
+    STEP_EXTRACT: "메타데이터 추출",
+    STEP_CLASSIFY: "국가/도시 분류",
+    STEP_MOVE: "파일 이동",
 }
 
 
@@ -60,7 +60,7 @@ class ProgressScreen(QWidget):
         root.setSpacing(14)
         root.setContentsMargins(32, 28, 32, 28)
 
-        self._step_lbl = QLabel("Preparing...")
+        self._step_lbl = QLabel("준비 중...")
         self._step_lbl.setAlignment(Qt.AlignCenter)
         self._step_lbl.setStyleSheet("font-size: 15px; font-weight: bold;")
         root.addWidget(self._step_lbl)
@@ -83,7 +83,7 @@ class ProgressScreen(QWidget):
         )
         root.addWidget(self._step_bar)
 
-        overall_lbl = QLabel("Overall Progress")
+        overall_lbl = QLabel("전체 진행률")
         overall_lbl.setStyleSheet("color: #888; font-size: 11px; margin-top: 4px;")
         root.addWidget(overall_lbl)
 
@@ -104,10 +104,10 @@ class ProgressScreen(QWidget):
         root.addWidget(divider)
 
         cards_layout = QHBoxLayout()
-        self._card_success = StatCard("OK", "Success")
-        self._card_dup = StatCard("DUP", "Duplicate")
-        self._card_skip = StatCard("SKIP", "Skipped")
-        self._card_fail = StatCard("ERR", "Failed")
+        self._card_success = StatCard("OK", "성공")
+        self._card_dup = StatCard("DUP", "중복")
+        self._card_skip = StatCard("SKIP", "건너뜀")
+        self._card_fail = StatCard("ERR", "실패")
         for card in (self._card_success, self._card_dup, self._card_skip, self._card_fail):
             cards_layout.addWidget(card)
         root.addLayout(cards_layout)
@@ -120,7 +120,7 @@ class ProgressScreen(QWidget):
 
         root.addStretch()
 
-        self._cancel_btn = QPushButton("Cancel")
+        self._cancel_btn = QPushButton("취소")
         self._cancel_btn.setFixedHeight(38)
         self._cancel_btn.setStyleSheet(
             "QPushButton { border: 1px solid #dc2626; color: #dc2626; border-radius: 6px; }"
@@ -133,7 +133,7 @@ class ProgressScreen(QWidget):
 
     def reset(self) -> None:
         self._current_step = STEP_EXTRACT
-        self._step_lbl.setText("Preparing...")
+        self._step_lbl.setText("준비 중...")
         self._step_counter_lbl.setText("0 / 0")
         self._step_bar.setValue(0)
         self._overall_bar.setValue(0)
@@ -151,7 +151,7 @@ class ProgressScreen(QWidget):
             step_num = "?"
             step_name = step_key
 
-        self._step_lbl.setText(f"Step {step_num}/3: {step_name}")
+        self._step_lbl.setText(f"{step_num}/3단계: {step_name}")
         self._step_counter_lbl.setText(f"{done} / {total}")
 
         pct = int((done / total * 100)) if total > 0 else 0
@@ -174,12 +174,12 @@ class ProgressScreen(QWidget):
     def _confirm_cancel(self) -> None:
         reply = QMessageBox.question(
             self,
-            "Confirm Cancel",
-            "Cancel the running job? Files already moved will stay moved.",
+            "작업 취소 확인",
+            "진행 중인 작업을 취소할까요? 이미 이동된 파일은 그대로 유지됩니다.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
             self._on_cancel()
             self._cancel_btn.setEnabled(False)
-            self._step_lbl.setText("Cancelling...")
+            self._step_lbl.setText("취소 중...")

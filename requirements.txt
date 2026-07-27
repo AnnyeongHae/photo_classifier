@@ -1,0 +1,5 @@
+PySide6>=6.6.0
+Pillow>=10.0.0
+rawpy>=0.18.0
+pillow-heif>=0.13.0
+pyshp>=2.3.0

@@ -151,13 +151,6 @@ def compute_orientation(width_value: str, height_value: str) -> str:
     if h > w:
         return "portrait"
     return "square"
-    value = str(value).strip()
-    if not value:
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        return None
 
 
 def point_in_ring(x: float, y: float, ring: List[Tuple[float, float]]) -> bool:

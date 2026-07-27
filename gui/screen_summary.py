@@ -6,12 +6,14 @@ import csv
 from pathlib import Path
 from typing import List
 
-from PySide6.QtCore import Qt, QSortFilterProxyModel, QTimer
+from PySide6.QtCore import Qt, QSortFilterProxyModel
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -19,9 +21,6 @@ from PySide6.QtWidgets import (
     QTableView,
     QVBoxLayout,
     QWidget,
-    QHeaderView,
-    QFrame,
-    QSizePolicy,
 )
 
 from core.pipeline import PipelineResult
@@ -42,8 +41,8 @@ _TABLE_COLUMNS = [
 
 _STATUS_FILTER_OPTIONS = [
     ("전체", None),
-    ("Success", "Success"),
-    ("No GPS", "No_GPS"),
+    ("성공", "Success"),
+    ("GPS 없음", "No_GPS"),
     ("기타 지역", "Other_Regions"),
     ("오류", "Error"),
     ("중복", "__duplicate__"),
@@ -69,7 +68,7 @@ class SummaryCard(QWidget):
         layout.addWidget(self._val_lbl)
         layout.addWidget(desc)
         self.setStyleSheet(
-            f"SummaryCard {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }}"
+            "SummaryCard { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; }"
         )
 
     def set_value(self, v: int) -> None:
@@ -88,30 +87,26 @@ class SummaryScreen(QWidget):
         root.setSpacing(12)
         root.setContentsMargins(24, 20, 24, 20)
 
-        # Title
-        self._title_lbl = QLabel("완료!")
+        self._title_lbl = QLabel("완료")
         self._title_lbl.setAlignment(Qt.AlignCenter)
         self._title_lbl.setStyleSheet("font-size: 18px; font-weight: bold;")
         root.addWidget(self._title_lbl)
 
-        # Summary cards
         cards_layout = QHBoxLayout()
-        self._card_total = SummaryCard("📁", "전체", "#1e40af")
-        self._card_success = SummaryCard("✅", "성공 (이동됨)", "#16a34a")
-        self._card_nogps = SummaryCard("📍", "GPS 없음", "#d97706")
-        self._card_other = SummaryCard("🌍", "기타 지역", "#7c3aed")
-        self._card_fail = SummaryCard("❌", "실패/오류", "#dc2626")
+        self._card_total = SummaryCard("TOTAL", "전체", "#1e40af")
+        self._card_success = SummaryCard("OK", "성공/이동", "#16a34a")
+        self._card_nogps = SummaryCard("GPS", "GPS 없음", "#d97706")
+        self._card_other = SummaryCard("ETC", "기타 지역", "#7c3aed")
+        self._card_fail = SummaryCard("ERR", "실패/오류", "#dc2626")
         for card in (self._card_total, self._card_success, self._card_nogps, self._card_other, self._card_fail):
             cards_layout.addWidget(card)
         root.addLayout(cards_layout)
 
-        # Divider
         divider = QFrame()
         divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet("color: #e2e8f0;")
         root.addWidget(divider)
 
-        # Filter row
         filter_row = QHBoxLayout()
 
         search_lbl = QLabel("검색:")
@@ -133,19 +128,18 @@ class SummaryScreen(QWidget):
         filter_row.addWidget(self._status_combo)
         filter_row.addStretch()
 
-        self._row_count_lbl = QLabel("0개 행")
+        self._row_count_lbl = QLabel("0개")
         self._row_count_lbl.setStyleSheet("color: #888; font-size: 12px;")
         filter_row.addWidget(self._row_count_lbl)
         root.addLayout(filter_row)
 
-        # Table
         self._model = QStandardItemModel()
         self._model.setHorizontalHeaderLabels([col[1] for col in _TABLE_COLUMNS])
 
         self._proxy = QSortFilterProxyModel()
         self._proxy.setSourceModel(self._model)
         self._proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)
-        self._proxy.setFilterKeyColumn(-1)  # search all columns
+        self._proxy.setFilterKeyColumn(-1)
 
         self._table = QTableView()
         self._table.setModel(self._proxy)
@@ -162,7 +156,6 @@ class SummaryScreen(QWidget):
         )
         root.addWidget(self._table)
 
-        # Bottom buttons
         btn_row = QHBoxLayout()
 
         self._export_btn = QPushButton("CSV 내보내기")
@@ -181,16 +174,20 @@ class SummaryScreen(QWidget):
         )
         more_btn.clicked.connect(self._on_process_more)
 
+        self._back_btn = QPushButton("← 허브로 돌아가기")
+        self._back_btn.setFixedHeight(36)
+        self._back_btn.setStyleSheet("color: #4b5563; font-weight: bold; border: none; padding: 0 16px;")
+
         btn_row.addWidget(self._export_btn)
         btn_row.addStretch()
         btn_row.addWidget(more_btn)
+        btn_row.addWidget(self._back_btn)
         root.addLayout(btn_row)
 
     def load_result(self, result: PipelineResult) -> None:
         """Populate the screen with pipeline result data."""
         self._all_rows = result.rows
 
-        # Update summary cards
         self._title_lbl.setText(f"완료!  {result.total}개 파일 처리됨")
         self._card_total.set_value(result.total)
         self._card_success.set_value(result.moved if result.move_stats else result.success)
@@ -220,21 +217,16 @@ class SummaryScreen(QWidget):
         _, status_filter = _STATUS_FILTER_OPTIONS[status_idx]
 
         if status_filter is None:
-            # All — use text search only
             self._proxy.setFilterFixedString(text)
             self._proxy.setFilterKeyColumn(-1)
         elif status_filter == "__duplicate__":
-            # Filter by is_duplicate column (index 4)
             self._proxy.setFilterFixedString("yes")
             self._proxy.setFilterKeyColumn(4)
         else:
-            # Filter by sort_status column (index 3)
             self._proxy.setFilterFixedString(status_filter)
             self._proxy.setFilterKeyColumn(3)
 
-        # Additional text filter via re-populate if status filter active
         if status_filter and text:
-            # Build filtered subset and repopulate
             col_keys = [c[0] for c in _TABLE_COLUMNS]
             visible_rows = []
             for row in self._all_rows:
@@ -242,7 +234,6 @@ class SummaryScreen(QWidget):
                     if row.get("is_duplicate") != "yes":
                         continue
                 elif row.get("sort_status", "") not in (status_filter, status_filter.replace("_", " ")):
-                    # exact match
                     if row.get("sort_status", "") != status_filter:
                         continue
                 row_str = " ".join(str(row.get(k, "")) for k in col_keys)
@@ -256,9 +247,9 @@ class SummaryScreen(QWidget):
         visible = self._proxy.rowCount()
         total = self._model.rowCount()
         if visible == total:
-            self._row_count_lbl.setText(f"{total}개 행")
+            self._row_count_lbl.setText(f"{total}개")
         else:
-            self._row_count_lbl.setText(f"{visible} / {total}개 행")
+            self._row_count_lbl.setText(f"{visible} / {total}개")
 
     def _export_csv(self) -> None:
         if not self._all_rows:
@@ -266,12 +257,11 @@ class SummaryScreen(QWidget):
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, "CSV 저장", "classified_result.csv", "CSV Files (*.csv)"
+            self, "CSV 저장", "classified_result.csv", "CSV 파일 (*.csv)"
         )
         if not path:
             return
 
-        # Export currently visible rows
         visible_count = self._proxy.rowCount()
         col_keys = [c[0] for c in _TABLE_COLUMNS]
         col_labels = [c[1] for c in _TABLE_COLUMNS]
@@ -286,6 +276,10 @@ class SummaryScreen(QWidget):
                     row = [self._model.item(row_idx, j).text() for j in range(len(col_keys))]
                     writer.writerow(row)
 
-            QMessageBox.information(self, "내보내기 완료", f"{visible_count}개 행을 저장했습니다:\n{path}")
+            QMessageBox.information(self, "내보내기 완료", f"{visible_count}개 행을 저장했습니다.\n{path}")
         except OSError as exc:
             QMessageBox.critical(self, "내보내기 실패", str(exc))
+
+    @property
+    def back_button(self) -> QPushButton:
+        return self._back_btn

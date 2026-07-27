@@ -4,6 +4,7 @@ import csv
 import hashlib
 import os
 import shutil
+import uuid
 from pathlib import Path
 from typing import Dict, List
 
@@ -106,7 +107,7 @@ def apply_copy_verify_move(plan: List[Dict[str, str]], duplicate_policy: str) ->
                 renamed += 1
         dest.parent.mkdir(parents=True, exist_ok=True)
 
-        temp_dest = dest.with_name(f".tmp_{dest.name}_{os.getpid()}")
+        temp_dest = dest.with_name(f".tmp_{dest.name}_{os.getpid()}_{uuid.uuid4().hex}")
         shutil.copy2(src, temp_dest)
         copied += 1
 
