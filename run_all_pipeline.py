@@ -7,8 +7,10 @@ from pathlib import Path
 
 
 # Edit only these two if you don't want to pass CLI args.
-DEFAULT_INPUT_FOLDER = r"d:\2026.04.09_photo classification\other\test_imges"
-DEFAULT_OUTPUT_FOLDER = r"d:\2026.04.09_photo classification\other\output"
+BASE_DIR = Path(__file__).parent.resolve()
+DEFAULT_INPUT_FOLDER = str(BASE_DIR / "other" / "test_imges")
+DEFAULT_OUTPUT_FOLDER = str(BASE_DIR / "other" / "output")
+
 
 DEFAULT_EXIFTOOL_CANDIDATES = [
     "exiftool",
