@@ -172,6 +172,17 @@ build.cmd
 
 ---
 
+## 🤝 Contributors & AI Collaboration
+
+This project was built with modern **AI-Assisted Agentic Engineering**:
+
+- **Lead Architect & Developer**: CoderAnnyeong ([@AnnyeongHae](https://github.com/AnnyeongHae))
+- **AI Agentic Coding Partners**:
+  - **Google Antigravity Agent**: Master README standardization, architecture design, & repository refactoring.
+  - **OpenAI Codex Sandbox**: Offline spatial GIS pipeline prototyping & Nuitka C++ build helper scripts.
+
+---
+
 ## 📜 License & Contact
 
 Distributed under the **MIT License**. See `LICENSE` for details.
@@ -179,3 +190,4 @@ Distributed under the **MIT License**. See `LICENSE` for details.
 - **Repository Maintainer**: CoderAnnyeong (AnnyeongHae)
 - **Email**: [anyong@khu.ac.kr](mailto:anyong@khu.ac.kr)
 - **GitHub**: [@AnnyeongHae](https://github.com/AnnyeongHae)
+
